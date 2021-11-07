@@ -28,8 +28,8 @@ pub struct Pipelines {
 }
 
 impl Pipelines {
-    pub fn new(device: &Device, format: TextureFormat) -> Self {
-        let mut res = Self {
+    pub fn new(format: TextureFormat) -> Self {
+        let res = Self {
             render_pipelines: Arc::new(Mutex::new(AHashMap::new())),
         };
 
@@ -42,7 +42,7 @@ impl Pipelines {
         }
 
         for tracker in job_trackers {
-            tracker.flush();
+            tracker.flush().expect("successful pipeline initialization");
         }
 
         res

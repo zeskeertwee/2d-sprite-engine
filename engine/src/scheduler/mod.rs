@@ -166,7 +166,7 @@ fn worker_main(
                     }
                     Err(e) => {
                         job_state.store(JobState::Failed as u8, Ordering::Relaxed);
-                        warn!("Job {} returned an error", job.type_name())
+                        warn!("Job {} returned an error: {}", job.type_name(), e)
                     }
                 }
             }

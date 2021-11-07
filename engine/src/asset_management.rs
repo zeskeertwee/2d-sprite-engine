@@ -1,6 +1,8 @@
+use crate::scheduler::{Job, JobScheduler};
 use crate::texture::GpuTexture;
 use ahash::AHashMap;
 use anyhow::{bail, Result};
+use arc_swap::{ArcSwap, Guard};
 use image::ImageFormat;
 use lazy_static::lazy_static;
 use log::{info, warn};
@@ -13,7 +15,7 @@ use std::sync::Arc;
 use uuid::Uuid;
 use vach::archive::{Archive, HeaderConfig};
 use vach::crypto::PublicKey;
-use wgpu::{Device, Queue};
+use wgpu::{BindGroup, Device, Queue};
 
 const NAMESPACE_ASSETS: [u8; 16] = [
     0x6b, 0xa7, 0xb8, 0x15, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
@@ -31,18 +33,23 @@ pub trait ToUuid {
     }
 }
 
+pub enum GpuTextureRef {
+    Swappable(CachedGpuTexture),
+    Shared(Arc<GpuTexture>),
+}
+
 lazy_static! {
     static ref ASSET_LOADER: Mutex<AssetLoader> = Mutex::new(AssetLoader::init());
 }
 
-type CachedGpuTexture = Arc<Mutex<Arc<GpuTexture>>>;
+pub type CachedGpuTexture = Arc<ArcSwap<GpuTexture>>;
 
 pub struct AssetLoader {
     header_config: HeaderConfig,
     archives: AHashMap<Uuid, Archive<File>>,
     raw_cache: AHashMap<Uuid, Arc<Vec<u8>>>,
-    tex_cache: AHashMap<Uuid, CachedGpuTexture>,
-    tex_placeholder: Option<CachedGpuTexture>,
+    tex_cache: AHashMap<Uuid, Arc<GpuTexture>>,
+    tex_placeholder: Option<Arc<GpuTexture>>,
 }
 
 impl AssetLoader {
@@ -67,8 +74,11 @@ impl AssetLoader {
         id: &str,
         format: ImageFormat,
     ) -> Result<()> {
-        let tex = Self::load_texture_with_format(device, queue, id, format)?;
-        Self::with_lock(|loader| loader.tex_placeholder = Some(tex));
+        let data = Self::get_asset_uncached(id)?;
+        let texture =
+            GpuTexture::new_from_data_with_format(device, queue, data.deref(), format, Some(id))?;
+        let atex = Arc::new(texture);
+        Self::with_lock(|loader| loader.tex_placeholder = Some(atex));
         Ok(())
     }
 
@@ -174,40 +184,38 @@ impl AssetLoader {
         );
     }
 
-    // TODO: Use jobs
-    pub fn load_texture(device: &Device, queue: &Queue, id: &str) -> Result<CachedGpuTexture> {
+    fn load_texture_inner(id: &str, format: Option<ImageFormat>) -> Result<GpuTextureRef> {
         match Self::load_texture_from_cache(id) {
-            Some(x) => return Ok(x),
+            Some(x) => return Ok(GpuTextureRef::Shared(x)),
             None => info!("Texture {} not in cache", id),
         }
 
-        let data = Self::get_asset_uncached(id)?;
-        let texture = GpuTexture::new_from_data(device, queue, data.deref(), Some(id))?;
-        let cached_texture = Arc::new(Mutex::new(Arc::new(texture)));
-        Self::insert_into_texture_cache(id, Arc::clone(&cached_texture));
-        Ok(cached_texture)
+        let tex = Self::with_lock(|loader| match &loader.tex_placeholder {
+            Some(x) => Arc::clone(x),
+            None => panic!("No placeholder texture set!"),
+        });
+
+        let arc_tex = Arc::new(ArcSwap::new(Arc::clone(&tex)));
+
+        let job = TextureLoadJob {
+            id: id.to_string(),
+            format,
+            tex: Arc::clone(&arc_tex),
+        };
+
+        JobScheduler::submit(box job);
+        Ok(GpuTextureRef::Swappable(arc_tex))
     }
 
-    pub fn load_texture_with_format(
-        device: &Device,
-        queue: &Queue,
-        id: &str,
-        format: ImageFormat,
-    ) -> Result<CachedGpuTexture> {
-        match Self::load_texture_from_cache(id) {
-            Some(x) => return Ok(x),
-            None => info!("Texture {} not in cache", id),
-        }
-
-        let data = Self::get_asset_uncached(id)?;
-        let texture =
-            GpuTexture::new_from_data_with_format(device, queue, data.deref(), format, Some(id))?;
-        let cached_texture = Arc::new(Mutex::new(Arc::new(texture)));
-        Self::insert_into_texture_cache(id, Arc::clone(&cached_texture));
-        Ok(cached_texture)
+    pub fn load_texture_with_format(id: &str, format: ImageFormat) -> Result<GpuTextureRef> {
+        Self::load_texture_inner(id, Some(format))
     }
 
-    fn load_texture_from_cache(id: &str) -> Option<Arc<Mutex<Arc<GpuTexture>>>> {
+    pub fn load_texture(id: &str) -> Result<GpuTextureRef> {
+        Self::load_texture_inner(id, None)
+    }
+
+    fn load_texture_from_cache(id: &str) -> Option<Arc<GpuTexture>> {
         let uuid = Uuid::new_v5(&UUID_NAMESPACE_ASSETS, id.as_bytes());
 
         Self::with_lock(|loader| match loader.tex_cache.get(&uuid) {
@@ -216,12 +224,38 @@ impl AssetLoader {
         })
     }
 
-    fn insert_into_texture_cache(id: &str, texture: CachedGpuTexture) {
+    fn insert_into_texture_cache(id: &str, texture: Arc<GpuTexture>) {
         let uuid = Uuid::new_v5(&UUID_NAMESPACE_ASSETS, id.as_bytes());
 
         Self::with_lock(|loader| match loader.tex_cache.insert(uuid, texture) {
             Some(_) => warn!("Cache already contained an entry for {}", id),
             None => (),
         });
+    }
+}
+
+struct TextureLoadJob {
+    id: String,
+    tex: CachedGpuTexture,
+    format: Option<ImageFormat>,
+}
+
+impl ToUuid for TextureLoadJob {}
+
+impl Job for TextureLoadJob {
+    fn run(&mut self, device: &Device, queue: &Queue) -> Result<()> {
+        let data = AssetLoader::get_asset_uncached(&self.id)?;
+        let texture = match self.format {
+            Some(format) => {
+                GpuTexture::new_from_data_with_format(device, queue, &data, format, Some(&self.id))
+            }
+            None => GpuTexture::new_from_data(device, queue, &data, Some(&self.id)),
+        }?;
+
+        let cached_texture = Arc::new(texture);
+        self.tex.swap(Arc::clone(&cached_texture));
+
+        AssetLoader::insert_into_texture_cache(&self.id, cached_texture);
+        Ok(())
     }
 }

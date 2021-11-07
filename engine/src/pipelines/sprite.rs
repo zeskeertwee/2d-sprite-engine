@@ -1,5 +1,7 @@
 use crate::asset_management::{AssetLoader, ToUuid};
-use crate::buffer::GpuVertexBufferLayout;
+use crate::buffer::{GpuUniformBuffer, GpuVertexBufferLayout};
+use crate::camera::CameraUniform;
+use crate::texture::GpuTexture;
 use crate::vertex::Vertex2;
 use wgpu::*;
 
@@ -24,7 +26,13 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
 
     let render_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("Sprite RPL"),
-        bind_group_layouts: &[],
+        bind_group_layouts: &[
+            &GpuUniformBuffer::<CameraUniform>::bind_group_static(
+                &device,
+                Some("Sprite RPL Camera BGL"),
+            ),
+            &GpuTexture::build_bind_group_layout(&device, "Sprite RPL Texture BGL"),
+        ],
         push_constant_ranges: &[],
     });
 

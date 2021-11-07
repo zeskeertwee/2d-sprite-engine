@@ -1,11 +1,12 @@
 use anyhow::Result;
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use std::num::NonZeroU32;
+use std::sync::Arc;
 use wgpu::*;
 
 pub struct GpuTexture {
     inner: Texture,
-    bind_group: BindGroup,
+    pub(crate) bind_group: Arc<BindGroup>,
 }
 
 impl GpuTexture {
@@ -91,31 +92,7 @@ impl GpuTexture {
             ..Default::default()
         });
 
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-                entries: &[
-                    BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: ShaderStages::FRAGMENT,
-                        ty: BindingType::Texture {
-                            multisampled: false,
-                            view_dimension: TextureViewDimension::D2,
-                            sample_type: TextureSampleType::Float { filterable: true },
-                        },
-                        count: None,
-                    },
-                    BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: ShaderStages::FRAGMENT,
-                        ty: BindingType::Sampler {
-                            comparison: false,
-                            filtering: true,
-                        },
-                        count: None,
-                    },
-                ],
-                label: Some(&format!("{} BGL", label)),
-            });
+        let texture_bind_group_layout = Self::build_bind_group_layout(&device, label);
 
         let texture_bind_group = device.create_bind_group(&BindGroupDescriptor {
             layout: &texture_bind_group_layout,
@@ -134,7 +111,38 @@ impl GpuTexture {
 
         Self {
             inner: texture,
-            bind_group: texture_bind_group,
+            bind_group: Arc::new(texture_bind_group),
         }
+    }
+
+    pub fn build_bind_group_layout(device: &Device, label: &str) -> BindGroupLayout {
+        device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Texture {
+                        multisampled: false,
+                        view_dimension: TextureViewDimension::D2,
+                        sample_type: TextureSampleType::Float { filterable: true },
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler {
+                        comparison: false,
+                        filtering: true,
+                    },
+                    count: None,
+                },
+            ],
+            label: Some(&format!("{} BGL", label)),
+        })
+    }
+
+    pub fn bind_group(&self) -> &BindGroup {
+        &self.bind_group
     }
 }

@@ -5,21 +5,25 @@ use wgpu::{BufferAddress, VertexAttribute, VertexBufferLayout, VertexFormat, Ver
 #[derive(Pod, Zeroable, Copy, Clone, Debug)]
 pub struct Vertex2 {
     pub position: [f32; 2],
-    pub color: [f32; 3],
+    pub tex_coord: [f32; 2],
 }
 
-pub const TRIANGLE: [Vertex2; 3] = [
+pub const SQUARE: [Vertex2; 4] = [
     Vertex2 {
-        position: [0.0, 0.5],
-        color: [1.0, 0.0, 0.0],
+        position: [0.5, 0.5],
+        tex_coord: [0.0, 0.0],
+    },
+    Vertex2 {
+        position: [-0.5, 0.5],
+        tex_coord: [1.0, 0.0],
     },
     Vertex2 {
         position: [-0.5, -0.5],
-        color: [0.0, 1.0, 0.0],
+        tex_coord: [1.0, 1.0],
     },
     Vertex2 {
         position: [0.5, -0.5],
-        color: [0.0, 0.0, 1.0],
+        tex_coord: [0.0, 1.0],
     },
 ];
 
@@ -37,7 +41,7 @@ impl crate::buffer::GpuVertexBufferLayout for Vertex2 {
                 VertexAttribute {
                     offset: std::mem::size_of::<[f32; 2]>() as BufferAddress,
                     shader_location: 1,
-                    format: VertexFormat::Float32x3,
+                    format: VertexFormat::Float32x2,
                 },
             ],
         }

@@ -1,8 +1,12 @@
+#![feature(box_syntax, type_alias_impl_trait)]
+
 mod asset_management;
 mod buffer;
+mod camera;
 mod pipelines;
 mod render_engine;
 mod scheduler;
+mod sprite;
 mod texture;
 mod vertex;
 
@@ -12,6 +16,7 @@ use std::panic::catch_unwind;
 use std::time::Instant;
 
 use crate::asset_management::AssetLoader;
+use crate::sprite::Sprite;
 use log::{debug, error, info, trace, warn};
 use winit::{
     event::*,
@@ -55,6 +60,12 @@ fn engine_main() {
     let mut render_engine = RenderEngine::new(&window);
     let mut last_cache_clean = Instant::now();
 
+    let sprite = Sprite::new(
+        AssetLoader::load_texture("tux-32.png").unwrap(),
+        [0.0, 0.0, 0.0],
+    );
+    render_engine.insert_sprite(sprite);
+
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
             WindowEvent::CloseRequested
@@ -74,6 +85,7 @@ fn engine_main() {
             _ => (),
         },
         Event::RedrawRequested(_) => {
+            //render_engine.update();
             match render_engine.render() {
                 Ok(_) => (),
                 Err(wgpu::SurfaceError::Lost) => {

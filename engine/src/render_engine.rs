@@ -1,13 +1,18 @@
 use super::pipelines;
+use ahash::AHashMap;
 use image::ImageFormat;
 use std::ops::Deref;
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::asset_management::GpuTextureRef;
 use crate::asset_management::{AssetLoader, ToUuid};
 use crate::buffer::{GpuIndexBuffer, GpuVertexBuffer};
+use crate::camera::Camera;
 use crate::pipelines::Pipelines;
 use crate::scheduler::JobScheduler;
+use crate::sprite::Sprite;
 use crate::texture::GpuTexture;
 use crate::vertex::Vertex2;
 use log::warn;
@@ -23,8 +28,11 @@ pub struct RenderEngine {
     config: SurfaceConfiguration,
     size: PhysicalSize<u32>,
     pipelines: Pipelines,
-    demo_triangle_buf: GpuVertexBuffer<Vertex2>,
-    demo_index_buf: GpuIndexBuffer<u32>,
+    camera: Camera,
+    sprite_square_vertex_buf: GpuVertexBuffer<Vertex2>,
+    sprite_square_index_buf: GpuIndexBuffer<u16>,
+    sprites: AHashMap<u64, Sprite>,
+    sprite_id_counter: u64,
     last_frametime: Duration,
     idle_time: Duration,
 }
@@ -58,7 +66,7 @@ impl RenderEngine {
 
         JobScheduler::init_device_queue(Arc::clone(&device), Arc::clone(&queue));
         // TODO: use propper amount of CPU cores
-        JobScheduler::spawn_workers(4).unwrap();
+        JobScheduler::spawn_workers(15).unwrap();
 
         AssetLoader::set_tex_placeholder(&device, &queue, "placeholder-32.png", ImageFormat::Png)
             .unwrap();
@@ -72,10 +80,12 @@ impl RenderEngine {
         };
         surface.configure(&device, &config);
 
-        let pipelines = Pipelines::new(&device, config.format);
+        let pipelines = Pipelines::new(config.format);
 
-        let buffer = GpuVertexBuffer::new(&device, &crate::vertex::TRIANGLE, Some("Triangle VB"));
-        let ibuffer = GpuIndexBuffer::new(&device, &[0, 1, 2], Some("Triangle IB"));
+        let sprite_vertex_buf =
+            GpuVertexBuffer::new(&device, &crate::vertex::SQUARE, Some("Square VB"));
+        let sprite_index_buf = GpuIndexBuffer::new(&device, &[0, 1, 2, 0, 2, 3], Some("Square IB"));
+        let camera = Camera::new(&device, size.height as f32, size.width as f32);
 
         Self {
             surface,
@@ -84,8 +94,11 @@ impl RenderEngine {
             config,
             size,
             pipelines,
-            demo_triangle_buf: buffer,
-            demo_index_buf: ibuffer,
+            camera,
+            sprite_square_vertex_buf: sprite_vertex_buf,
+            sprite_square_index_buf: sprite_index_buf,
+            sprite_id_counter: 0,
+            sprites: AHashMap::new(),
             last_frametime: Duration::new(0, 0),
             idle_time: Duration::new(0, 0),
         }
@@ -104,6 +117,10 @@ impl RenderEngine {
 
     pub fn reconfigure_surface(&self) {
         self.surface.configure(&self.device, &self.config);
+    }
+
+    pub fn update(&mut self) {
+        self.camera.update_uniform_buffer(&self.queue);
     }
 
     pub fn render(&mut self) -> Result<(), SurfaceError> {
@@ -140,21 +157,55 @@ impl RenderEngine {
             depth_stencil_attachment: None,
         });
 
-        render_pass.set_pipeline(&pipeline);
-        render_pass.set_vertex_buffer(0, self.demo_triangle_buf.slice(..));
-        render_pass.set_index_buffer(
-            self.demo_index_buf.slice(..),
-            self.demo_index_buf.index_format(),
-        );
-        render_pass.draw_indexed(0..self.demo_index_buf.data_count(), 0, 0..1);
+        let mut sprite_resources = WgpuRenderPass {
+            pass: render_pass,
+            uniform_bind_group: &self.camera,
+            bind_groups: Vec::new(),
+            vertex_buf: &self.sprite_square_vertex_buf,
+            index_buf: &self.sprite_square_index_buf,
+            pipeline: &*self
+                .pipelines
+                .get_render_pipeline(pipelines::sprite::SpriteRenderPipeline.uuid()),
+        };
 
-        drop(render_pass);
+        for sprite in self.sprites.values() {
+            let bind_group = match &sprite.texture {
+                GpuTextureRef::Swappable(x) => {
+                    let tex = x.load();
+                    Arc::clone(&tex.bind_group)
+                }
+                GpuTextureRef::Shared(x) => Arc::clone(&x.bind_group),
+            };
+
+            sprite_resources.bind_groups.push(bind_group);
+        }
+
+        //sprite_resources.pass.set_pipeline(&pipeline);
+        //sprite_resources
+        //    .pass
+        //    .set_vertex_buffer(0, self.sprite_square_vertex_buf.slice(..));
+        //sprite_resources.pass.set_index_buffer(
+        //    self.sprite_square_index_buf.slice(..),
+        //    self.sprite_square_index_buf.index_format(),
+        //);
+        //
+        //for bind_group in sprite_resources.bind_groups.iter() {
+        //    sprite_resources.pass.set_bind_group(0, &bind_group, &[]);
+        //    sprite_resources.pass.draw_indexed(
+        //        0..self.sprite_square_index_buf.data_count(),
+        //        0,
+        //        0..1,
+        //    );
+        //}
+        //
+        //drop(sprite_resources);
+
+        sprite_resources.submit();
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         self.last_frametime = start.elapsed();
-
         Ok(())
     }
 
@@ -170,5 +221,40 @@ impl RenderEngine {
     pub fn gpu_busy_ratio(&self) -> f64 {
         let total_time = self.idle_time.as_secs_f64() + self.last_frametime.as_secs_f64();
         self.last_frametime.as_secs_f64() / total_time
+    }
+
+    pub fn insert_sprite(&mut self, sprite: Sprite) -> u64 {
+        let id = self.sprite_id_counter;
+        self.sprite_id_counter += 1;
+        self.sprites.insert(id, sprite);
+        id
+    }
+}
+
+struct WgpuRenderPass<'a> {
+    pass: RenderPass<'a>,
+    pipeline: &'a RenderPipeline,
+    bind_groups: Vec<Arc<BindGroup>>,
+    uniform_bind_group: &'a Camera,
+    vertex_buf: &'a GpuVertexBuffer<Vertex2>,
+    index_buf: &'a GpuIndexBuffer<u16>,
+}
+
+impl<'a> WgpuRenderPass<'a> {
+    pub fn submit(mut self) {
+        self.pass.set_pipeline(self.pipeline);
+        self.pass
+            .set_bind_group(0, &self.uniform_bind_group.bind_group(), &[]);
+        self.pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
+        self.pass
+            .set_index_buffer(self.index_buf.slice(..), self.index_buf.index_format());
+
+        for sprite in self.bind_groups {
+            // SAFETY: trust me bro
+            let borrow: &'static Arc<BindGroup> = unsafe { std::mem::transmute(&sprite) };
+            self.pass.set_bind_group(1, &borrow, &[]);
+            self.pass
+                .draw_indexed(0..self.index_buf.data_count(), 0, 0..1);
+        }
     }
 }

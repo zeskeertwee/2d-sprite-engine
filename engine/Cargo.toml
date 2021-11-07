@@ -24,6 +24,7 @@ parking_lot = "0.11.2"
 uuid = { version = "0.8.2", features = ["v5"] }
 serde = { version = "1.0.130", features = ["derive"] }
 crossbeam = "0.8.1"
+arc-swap = "1.4.0"
 
 [dependencies.vach]
 git = "https://github.com/zeskeertwee/vach"

@@ -75,6 +75,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arc-swap"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6df5aef5c5830360ce5218cecb8f018af3438af5686ae945094affc86fdec63"
+
+[[package]]
 name = "arrayvec"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -667,6 +673,7 @@ version = "0.1.0"
 dependencies = [
  "ahash 0.7.6",
  "anyhow",
+ "arc-swap",
  "bytemuck",
  "cgmath",
  "crossbeam",
