@@ -6,6 +6,14 @@ use wgpu::{
     BufferBindingType, Device, Queue, ShaderStages,
 };
 
+#[rustfmt::skip]
+pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,
+);
+
 pub struct Camera {
     uniform_buf: GpuUniformBuffer<CameraUniform>,
     bind_group: BindGroup,
@@ -17,7 +25,7 @@ pub struct Camera {
 impl Camera {
     pub fn new(device: &Device, height: f32, width: f32) -> Self {
         let uniform = CameraUniform {
-            view: Matrix4::identity().into(),
+            proj: Matrix4::identity().into(),
         };
 
         let buffer = GpuUniformBuffer::new(&device, &[uniform], Some("Camera UB"));
@@ -39,7 +47,7 @@ impl Camera {
         }
     }
 
-    pub fn ortho_view_matrix(&self) -> cgmath::Matrix4<f32> {
+    pub fn ortho_proj_matrix(&self) -> cgmath::Matrix4<f32> {
         let half_height = self.height / 2.0;
         let top = self.position.y + half_height;
         let bottom = self.position.y - half_height;
@@ -47,12 +55,12 @@ impl Camera {
         let half_width = self.width / 2.0;
         let right = self.position.x + half_width;
         let left = self.position.x - half_width;
-        cgmath::ortho(left, right, bottom, top, 0.0, 1000.0)
+        cgmath::ortho(left, right, bottom, top, 0.0, 1000.0) * OPENGL_TO_WGPU_MATRIX
     }
 
     pub fn update_uniform_buffer(&self, queue: &Queue) {
         let uniform = CameraUniform {
-            view: self.ortho_view_matrix().into(),
+            proj: self.ortho_proj_matrix().into(),
         };
 
         self.uniform_buf.update(queue, &[uniform]);
@@ -74,7 +82,7 @@ impl Deref for Camera {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
-    view: [[f32; 4]; 4],
+    proj: [[f32; 4]; 4],
 }
 
 impl Uniform for CameraUniform {

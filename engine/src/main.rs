@@ -3,6 +3,7 @@
 mod asset_management;
 mod buffer;
 mod camera;
+mod draw_batch;
 mod pipelines;
 mod render_engine;
 mod scheduler;
@@ -62,7 +63,7 @@ fn engine_main() {
 
     let sprite = Sprite::new(
         AssetLoader::load_texture("tux-32.png").unwrap(),
-        [0.0, 0.0, 0.0],
+        [5.0, 5.0, 0.0],
     );
     render_engine.insert_sprite(sprite);
 
@@ -85,7 +86,7 @@ fn engine_main() {
             _ => (),
         },
         Event::RedrawRequested(_) => {
-            //render_engine.update();
+            render_engine.update();
             match render_engine.render() {
                 Ok(_) => (),
                 Err(wgpu::SurfaceError::Lost) => {

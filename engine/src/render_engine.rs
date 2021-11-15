@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use crate::asset_management::GpuTextureRef;
 use crate::asset_management::{AssetLoader, ToUuid};
-use crate::buffer::{GpuIndexBuffer, GpuVertexBuffer};
+use crate::buffer::{GpuIndexBuffer, GpuUniformBuffer, GpuVertexBuffer};
 use crate::camera::Camera;
 use crate::pipelines::Pipelines;
 use crate::scheduler::JobScheduler;
@@ -20,6 +20,8 @@ use pollster::block_on;
 use wgpu::*;
 use winit::dpi::PhysicalSize;
 use winit::window::Window;
+
+const PUSH_CONSTANT_SIZE_LIMIT: u32 = 256;
 
 pub struct RenderEngine {
     surface: Surface,
@@ -52,11 +54,17 @@ impl RenderEngine {
         }))
         .unwrap();
 
+        let mut limits = Limits::default();
+        limits.max_push_constant_size = PUSH_CONSTANT_SIZE_LIMIT;
+
+        let mut features = Features::empty();
+        features.set(Features::PUSH_CONSTANTS, true);
+
         let (device, queue) = block_on(adapter.request_device(
             &DeviceDescriptor {
                 label: None,
-                features: Features::empty(),
-                limits: Limits::default(),
+                features,
+                limits,
             },
             None,
         ))
@@ -139,6 +147,8 @@ impl RenderEngine {
             .pipelines
             .get_render_pipeline(pipelines::sprite::SpriteRenderPipeline.uuid());
 
+        //let tex = self.sprites.get(&0).unwrap().texture.load();
+
         let mut render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: None,
             color_attachments: &[RenderPassColorAttachment {
@@ -157,50 +167,28 @@ impl RenderEngine {
             depth_stencil_attachment: None,
         });
 
-        let mut sprite_resources = WgpuRenderPass {
-            pass: render_pass,
-            uniform_bind_group: &self.camera,
-            bind_groups: Vec::new(),
-            vertex_buf: &self.sprite_square_vertex_buf,
-            index_buf: &self.sprite_square_index_buf,
-            pipeline: &*self
-                .pipelines
-                .get_render_pipeline(pipelines::sprite::SpriteRenderPipeline.uuid()),
-        };
+        render_pass.set_pipeline(&pipeline);
+        render_pass.set_vertex_buffer(0, self.sprite_square_vertex_buf.slice(..));
+        render_pass.set_index_buffer(
+            self.sprite_square_index_buf.slice(..),
+            self.sprite_square_index_buf.index_format(),
+        );
+        render_pass.set_bind_group(0, &self.camera.bind_group(), &[]);
 
-        for sprite in self.sprites.values() {
-            let bind_group = match &sprite.texture {
-                GpuTextureRef::Swappable(x) => {
-                    let tex = x.load();
-                    Arc::clone(&tex.bind_group)
-                }
-                GpuTextureRef::Shared(x) => Arc::clone(&x.bind_group),
-            };
-
-            sprite_resources.bind_groups.push(bind_group);
+        for (_, sprite) in self.sprites.iter() {
+            let model_mat =
+                cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(0.0, 0.0, 0.0));
+            let model: [u8; 64] =
+                unsafe { std::mem::transmute(model_mat * cgmath::Matrix4::from_scale(200.0)) };
+            render_pass.set_push_constants(ShaderStages::VERTEX, 0, &model);
+            render_pass.set_bind_group(
+                1,
+                unsafe { sprite.texture.load().static_bind_group() },
+                &[],
+            );
+            render_pass.draw_indexed(0..self.sprite_square_index_buf.data_count(), 0, 0..1);
         }
-
-        //sprite_resources.pass.set_pipeline(&pipeline);
-        //sprite_resources
-        //    .pass
-        //    .set_vertex_buffer(0, self.sprite_square_vertex_buf.slice(..));
-        //sprite_resources.pass.set_index_buffer(
-        //    self.sprite_square_index_buf.slice(..),
-        //    self.sprite_square_index_buf.index_format(),
-        //);
-        //
-        //for bind_group in sprite_resources.bind_groups.iter() {
-        //    sprite_resources.pass.set_bind_group(0, &bind_group, &[]);
-        //    sprite_resources.pass.draw_indexed(
-        //        0..self.sprite_square_index_buf.data_count(),
-        //        0,
-        //        0..1,
-        //    );
-        //}
-        //
-        //drop(sprite_resources);
-
-        sprite_resources.submit();
+        drop(render_pass);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
@@ -229,32 +217,8 @@ impl RenderEngine {
         self.sprites.insert(id, sprite);
         id
     }
-}
 
-struct WgpuRenderPass<'a> {
-    pass: RenderPass<'a>,
-    pipeline: &'a RenderPipeline,
-    bind_groups: Vec<Arc<BindGroup>>,
-    uniform_bind_group: &'a Camera,
-    vertex_buf: &'a GpuVertexBuffer<Vertex2>,
-    index_buf: &'a GpuIndexBuffer<u16>,
-}
-
-impl<'a> WgpuRenderPass<'a> {
-    pub fn submit(mut self) {
-        self.pass.set_pipeline(self.pipeline);
-        self.pass
-            .set_bind_group(0, &self.uniform_bind_group.bind_group(), &[]);
-        self.pass.set_vertex_buffer(0, self.vertex_buf.slice(..));
-        self.pass
-            .set_index_buffer(self.index_buf.slice(..), self.index_buf.index_format());
-
-        for sprite in self.bind_groups {
-            // SAFETY: trust me bro
-            let borrow: &'static Arc<BindGroup> = unsafe { std::mem::transmute(&sprite) };
-            self.pass.set_bind_group(1, &borrow, &[]);
-            self.pass
-                .draw_indexed(0..self.index_buf.data_count(), 0, 0..1);
-        }
+    pub fn device(&self) -> &Device {
+        &self.device
     }
 }

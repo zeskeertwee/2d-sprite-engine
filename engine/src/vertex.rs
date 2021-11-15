@@ -25,6 +25,22 @@ pub const SQUARE: [Vertex2; 4] = [
         position: [0.5, -0.5],
         tex_coord: [0.0, 1.0],
     },
+    //Vertex2 {
+    //    position: [400.0, 400.0],
+    //    tex_coord: [0.0, 0.0],
+    //},
+    //Vertex2 {
+    //    position: [0.0, 400.0],
+    //    tex_coord: [1.0, 0.0],
+    //},
+    //Vertex2 {
+    //    position: [0.0, 0.0],
+    //    tex_coord: [1.0, 1.0],
+    //},
+    //Vertex2 {
+    //    position: [400.0, 0.0],
+    //    tex_coord: [0.0, 1.0],
+    //},
 ];
 
 impl crate::buffer::GpuVertexBufferLayout for Vertex2 {

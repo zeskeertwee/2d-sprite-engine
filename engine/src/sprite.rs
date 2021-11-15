@@ -1,5 +1,12 @@
 use crate::asset_management::GpuTextureRef;
+use crate::buffer::GpuUniformBuffer;
+use crate::texture::GpuTexture;
 use cgmath::Vector3;
+use std::sync::Arc;
+use wgpu::{
+    BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor,
+    BindGroupLayoutEntry, BindingType, BufferBindingType, Device, Queue, ShaderStages,
+};
 
 pub struct Sprite {
     pub(crate) texture: GpuTextureRef,
@@ -9,9 +16,11 @@ pub struct Sprite {
 
 impl Sprite {
     pub fn new<T: Into<Vector3<f32>>>(texture: GpuTextureRef, position: T) -> Self {
+        let pos = position.into();
+
         Self {
             texture,
-            position: position.into(),
+            position: pos.into(),
         }
     }
 }

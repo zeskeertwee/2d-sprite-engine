@@ -1,5 +1,5 @@
 use crate::asset_management::{AssetLoader, ToUuid};
-use crate::buffer::{GpuUniformBuffer, GpuVertexBufferLayout};
+use crate::buffer::{GpuUniformBuffer, GpuVertexBufferLayout, Uniform};
 use crate::camera::CameraUniform;
 use crate::texture::GpuTexture;
 use crate::vertex::Vertex2;
@@ -33,7 +33,11 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
             ),
             &GpuTexture::build_bind_group_layout(&device, "Sprite RPL Texture BGL"),
         ],
-        push_constant_ranges: &[],
+        push_constant_ranges: &[PushConstantRange {
+            // model matrix
+            stages: ShaderStages::VERTEX,
+            range: 0..64,
+        }],
     });
 
     device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -49,14 +53,14 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
             entry_point: "main",
             targets: &[ColorTargetState {
                 format,
-                blend: Some(BlendState::REPLACE),
+                blend: Some(BlendState::ALPHA_BLENDING),
                 write_mask: ColorWrites::ALL,
             }],
         }),
         primitive: PrimitiveState {
             topology: PrimitiveTopology::TriangleList,
             strip_index_format: None,
-            front_face: FrontFace::Ccw,
+            front_face: FrontFace::Cw,
             // we're drawing sprites, which are rectangles with a texture, so no culling is needed
             cull_mode: None,
             polygon_mode: PolygonMode::Fill,

@@ -2,10 +2,12 @@ use anyhow::Result;
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use uuid::Uuid;
 use wgpu::*;
 
 pub struct GpuTexture {
     inner: Texture,
+    uuid: Uuid,
     pub(crate) bind_group: Arc<BindGroup>,
 }
 
@@ -15,6 +17,7 @@ impl GpuTexture {
         queue: &Queue,
         data: &[u8],
         label: Option<&str>,
+        uuid: Uuid,
     ) -> Result<Self> {
         let image = image::load_from_memory(data)?;
         Ok(Self::new_from_image(
@@ -22,6 +25,7 @@ impl GpuTexture {
             queue,
             &image,
             label.unwrap_or("unnamed"),
+            uuid,
         ))
     }
 
@@ -31,6 +35,7 @@ impl GpuTexture {
         data: &[u8],
         format: ImageFormat,
         label: Option<&str>,
+        uuid: Uuid,
     ) -> Result<Self> {
         let image = image::load_from_memory_with_format(data, format)?;
         Ok(Self::new_from_image(
@@ -38,6 +43,7 @@ impl GpuTexture {
             queue,
             &image,
             label.unwrap_or("unnamed"),
+            uuid,
         ))
     }
 
@@ -46,6 +52,7 @@ impl GpuTexture {
         queue: &Queue,
         image: &DynamicImage,
         label: &str,
+        uuid: Uuid,
     ) -> Self {
         let texture_size = Extent3d {
             width: image.width(),
@@ -111,6 +118,7 @@ impl GpuTexture {
 
         Self {
             inner: texture,
+            uuid,
             bind_group: Arc::new(texture_bind_group),
         }
     }
@@ -142,7 +150,16 @@ impl GpuTexture {
         })
     }
 
+    // it is up to the caller to guarantee that this texture isn't dropped whilst the bind group is expected to live.
+    pub unsafe fn static_bind_group(&self) -> &'static Arc<BindGroup> {
+        std::mem::transmute::<&Arc<BindGroup>, &'static Arc<BindGroup>>(&self.bind_group)
+    }
+
     pub fn bind_group(&self) -> &BindGroup {
         &self.bind_group
+    }
+
+    pub fn uuid(&self) -> Uuid {
+        self.uuid
     }
 }
