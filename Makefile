@@ -1,6 +1,6 @@
 all: engine
 
-VACHCLI = ./vach-cli
+VACHCLI = vach-cli
 KEYFILE = ./res/keys/key.pair
 PNG_ASSET_PAK = ./res/redist/assets.pak
 SHADER_ASSET_PAK = ./res/redist/shaders.pak

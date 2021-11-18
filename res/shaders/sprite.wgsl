@@ -30,8 +30,8 @@ fn main(
     var out: VertexOutput;
     out.tex_coords = model.tex_coords;
     out.clip_position = camera.proj * push_constant.model * vec4<f32>(model.position, 0.0, 1.0);
+    // if we don't do this, it ends up outside of the 0-1 range that wgpu requires for something to be drawn
     out.clip_position.z = 0.0;
-    //out.clip_position = vec4<f32>(model.position, 0.0, 1.0);
     return out;
 }
 
@@ -42,6 +42,5 @@ var t_sampler: sampler;
 
 [[stage(fragment)]]
 fn main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    //return textureSample(t_texture, t_sampler, in.tex_coords);
-    return vec4<f32>(1.0, 1.0, 1.0, 1.0);
+    return textureSample(t_texture, t_sampler, in.tex_coords);
 }

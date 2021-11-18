@@ -1,24 +1,24 @@
 use super::pipelines;
 use ahash::AHashMap;
 use image::ImageFormat;
-use std::ops::Deref;
-use std::pin::Pin;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::asset_management::GpuTextureRef;
 use crate::asset_management::{AssetLoader, ToUuid};
-use crate::buffer::{GpuIndexBuffer, GpuUniformBuffer, GpuVertexBuffer};
+use crate::buffer::{GpuIndexBuffer, GpuVertexBuffer};
 use crate::camera::Camera;
 use crate::pipelines::Pipelines;
 use crate::scheduler::JobScheduler;
 use crate::sprite::Sprite;
-use crate::texture::GpuTexture;
+use crate::ui::integration::{EguiIntegration, EguiRequestRedrawEvent};
+use crate::ui::DebugUi;
 use crate::vertex::Vertex2;
-use log::warn;
+use log::{info, warn};
 use pollster::block_on;
 use wgpu::*;
 use winit::dpi::PhysicalSize;
+use winit::event::Event;
+use winit::event_loop::EventLoop;
 use winit::window::Window;
 
 const PUSH_CONSTANT_SIZE_LIMIT: u32 = 256;
@@ -37,10 +37,12 @@ pub struct RenderEngine {
     sprite_id_counter: u64,
     last_frametime: Duration,
     idle_time: Duration,
+    egui_integration: EguiIntegration,
+    egui_debug_ui: DebugUi,
 }
 
 impl RenderEngine {
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Window, event_loop: &EventLoop<EguiRequestRedrawEvent>) -> Self {
         let size = window.inner_size();
 
         // should make it work on linux, macos and windows
@@ -95,6 +97,8 @@ impl RenderEngine {
         let sprite_index_buf = GpuIndexBuffer::new(&device, &[0, 1, 2, 0, 2, 3], Some("Square IB"));
         let camera = Camera::new(&device, size.height as f32, size.width as f32);
 
+        let egui = EguiIntegration::new(&device, event_loop, &config, window.scale_factor() as f32);
+
         Self {
             surface,
             device,
@@ -103,6 +107,8 @@ impl RenderEngine {
             size,
             pipelines,
             camera,
+            egui_integration: egui,
+            egui_debug_ui: DebugUi::default(),
             sprite_square_vertex_buf: sprite_vertex_buf,
             sprite_square_index_buf: sprite_index_buf,
             sprite_id_counter: 0,
@@ -112,15 +118,24 @@ impl RenderEngine {
         }
     }
 
+    pub fn process_event(&mut self, event: &Event<EguiRequestRedrawEvent>) {
+        self.egui_integration.process_event(event);
+    }
+
     pub fn resize(&mut self, new_size: PhysicalSize<u32>) {
         if new_size.width > 0 && new_size.height > 0 {
             self.size = new_size;
             self.config.width = new_size.width;
             self.config.height = new_size.height;
             self.reconfigure_surface();
+            self.camera.window_resize(new_size);
         } else {
             warn!("Attempt to resize window to a size where x = 0 or where y = 0");
         }
+    }
+
+    pub fn update_scale_factor(&mut self, scale_factor: f64) {
+        self.egui_integration.set_scale_factor(scale_factor as f32);
     }
 
     pub fn reconfigure_surface(&self) {
@@ -129,9 +144,21 @@ impl RenderEngine {
 
     pub fn update(&mut self) {
         self.camera.update_uniform_buffer(&self.queue);
+        self.egui_debug_ui
+            .set_frametime(self.total_frame_time().as_secs_f64());
+
+        if self.config.present_mode != self.egui_debug_ui.present_mode() {
+            info!(
+                "Updating present mode from {:?} to {:?} (reason: DebugUi)",
+                self.config.present_mode,
+                self.egui_debug_ui.present_mode()
+            );
+            self.config.present_mode = self.egui_debug_ui.present_mode();
+            self.reconfigure_surface();
+        }
     }
 
-    pub fn render(&mut self) -> Result<(), SurfaceError> {
+    pub fn render(&mut self, window: &Window) -> Result<(), SurfaceError> {
         let idle_start = Instant::now();
         let output = self.surface.get_current_texture()?;
         self.idle_time = idle_start.elapsed();
@@ -190,6 +217,16 @@ impl RenderEngine {
         }
         drop(render_pass);
 
+        self.egui_integration.render(
+            window,
+            &mut encoder,
+            &self.device,
+            &self.queue,
+            &view,
+            &self.config,
+            &mut [&mut self.egui_debug_ui],
+        );
+
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
@@ -203,6 +240,10 @@ impl RenderEngine {
 
     pub fn idle_time(&self) -> &Duration {
         &self.idle_time
+    }
+
+    pub fn total_frame_time(&self) -> Duration {
+        self.idle_time + self.last_frametime
     }
 
     /// 1.0 means the gpu is spending no time idle, while 0.0 means the gpu is not spending any time rendering

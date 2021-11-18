@@ -5,6 +5,7 @@ use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingType,
     BufferBindingType, Device, Queue, ShaderStages,
 };
+use winit::dpi::PhysicalSize;
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -45,6 +46,11 @@ impl Camera {
             height,
             width,
         }
+    }
+
+    pub fn window_resize(&mut self, new_size: PhysicalSize<u32>) {
+        self.height = new_size.height as f32;
+        self.width = new_size.width as f32;
     }
 
     pub fn ortho_proj_matrix(&self) -> cgmath::Matrix4<f32> {

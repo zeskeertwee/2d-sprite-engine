@@ -9,6 +9,7 @@ mod render_engine;
 mod scheduler;
 mod sprite;
 mod texture;
+mod ui;
 mod vertex;
 
 use dialog::DialogBox;
@@ -55,10 +56,10 @@ fn engine_main() {
     AssetLoader::add_archive("./res/redist/shaders.pak").unwrap();
     AssetLoader::add_archive("./res/redist/assets.pak").unwrap();
 
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let mut render_engine = RenderEngine::new(&window);
+    let mut render_engine = RenderEngine::new(&window, &event_loop);
     let mut last_cache_clean = Instant::now();
 
     let sprite = Sprite::new(
@@ -67,45 +68,56 @@ fn engine_main() {
     );
     render_engine.insert_sprite(sprite);
 
-    event_loop.run(move |event, _, control_flow| match event {
-        Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state: ElementState::Pressed,
-                        virtual_keycode: Some(VirtualKeyCode::Escape),
-                        ..
-                    },
-                ..
-            } => *control_flow = ControlFlow::Exit,
-            WindowEvent::Resized(new_size) => render_engine.resize(new_size),
-            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                render_engine.resize(*new_inner_size)
+    event_loop.run(move |event, _, control_flow| {
+        render_engine.process_event(&event);
+
+        match event {
+            Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
+                WindowEvent::CloseRequested
+                | WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            state: ElementState::Pressed,
+                            virtual_keycode: Some(VirtualKeyCode::Escape),
+                            ..
+                        },
+                    ..
+                } => *control_flow = ControlFlow::Exit,
+                WindowEvent::Resized(new_size) => render_engine.resize(new_size),
+                WindowEvent::ScaleFactorChanged {
+                    new_inner_size,
+                    scale_factor,
+                } => {
+                    render_engine.resize(*new_inner_size);
+                    render_engine.update_scale_factor(scale_factor);
+                }
+                _ => (),
+            },
+            Event::RedrawRequested(_) => {
+                render_engine.update();
+                match render_engine.render(&window) {
+                    Ok(_) => (),
+                    Err(wgpu::SurfaceError::Lost) => {
+                        render_engine.reconfigure_surface();
+                        warn!("wgpu::SurfaceError::Lost");
+                    }
+                    Err(wgpu::SurfaceError::OutOfMemory) => {
+                        *control_flow = ControlFlow::Exit;
+                        error!("wgpu::SurfaceError::OutOfMemory");
+                    }
+                    Err(e) => warn!("{}", e),
+                }
+
+                if last_cache_clean.elapsed().as_secs_f64() >= 10.0 {
+                    AssetLoader::clean_cache();
+                    last_cache_clean = Instant::now();
+                }
+            }
+            Event::MainEventsCleared
+            | Event::UserEvent(ui::integration::EguiRequestRedrawEvent::RequestRedraw) => {
+                window.request_redraw()
             }
             _ => (),
-        },
-        Event::RedrawRequested(_) => {
-            render_engine.update();
-            match render_engine.render() {
-                Ok(_) => (),
-                Err(wgpu::SurfaceError::Lost) => {
-                    render_engine.reconfigure_surface();
-                    warn!("wgpu::SurfaceError::Lost");
-                }
-                Err(wgpu::SurfaceError::OutOfMemory) => {
-                    *control_flow = ControlFlow::Exit;
-                    error!("wgpu::SurfaceError::OutOfMemory");
-                }
-                Err(e) => warn!("{}", e),
-            }
-
-            if last_cache_clean.elapsed().as_secs_f64() >= 10.0 {
-                AssetLoader::clean_cache();
-                last_cache_clean = Instant::now();
-            }
         }
-        Event::MainEventsCleared => window.request_redraw(),
-        _ => (),
     })
 }
