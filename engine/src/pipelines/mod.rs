@@ -1,7 +1,7 @@
 mod job;
 pub mod sprite;
 
-use crate::asset_management::ToUuid;
+use crate::asset_management::{ToUuid, Uuid};
 use crate::scheduler::{Job, JobScheduler, JobState};
 use ahash::{AHashMap, AHasher};
 use lazy_static::lazy_static;
@@ -10,7 +10,6 @@ use parking_lot::Mutex;
 use std::any::{type_name, Any};
 use std::hash::Hasher;
 use std::sync::Arc;
-use uuid::Uuid;
 use wgpu::*;
 use winit::event::VirtualKeyCode::Mute;
 

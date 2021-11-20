@@ -11,7 +11,7 @@ engine: Makefile
 assets: png_assets shader_assets
 
 png_assets: res/assets/*.png
-	$(VACHCLI) -K $(KEYFILE) package -E $(PNG_ASSET_PAK) ./res/assets/*.png
+	$(VACHCLI) -K $(KEYFILE) package -E $(PNG_ASSET_PAK) ./res/assets/*.png res/assets/*.jpeg
 
 shader_assets: res/shaders/*.wgsl
 	cargo wgsl

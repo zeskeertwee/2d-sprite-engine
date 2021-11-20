@@ -144,18 +144,22 @@ impl RenderEngine {
 
     pub fn update(&mut self) {
         self.camera.update_uniform_buffer(&self.queue);
-        self.egui_debug_ui
-            .set_frametime(self.total_frame_time().as_secs_f64());
+        let frametime = self.total_frame_time().as_secs_f64();
+        self.egui_debug_ui.fps_window_mut().set_frametime(frametime);
 
-        if self.config.present_mode != self.egui_debug_ui.present_mode() {
+        if self.config.present_mode != self.egui_debug_ui.fps_window().present_mode() {
             info!(
                 "Updating present mode from {:?} to {:?} (reason: DebugUi)",
                 self.config.present_mode,
-                self.egui_debug_ui.present_mode()
+                self.egui_debug_ui.fps_window().present_mode()
             );
-            self.config.present_mode = self.egui_debug_ui.present_mode();
+            self.config.present_mode = self.egui_debug_ui.fps_window().present_mode();
             self.reconfigure_surface();
         }
+
+        self.egui_debug_ui
+            .cache_window_mut()
+            .update(&self.device, self.egui_integration.render_pass_mut())
     }
 
     pub fn render(&mut self, window: &Window) -> Result<(), SurfaceError> {
@@ -224,7 +228,7 @@ impl RenderEngine {
             &self.queue,
             &view,
             &self.config,
-            &mut [&mut self.egui_debug_ui],
+            &mut self.egui_debug_ui,
         );
 
         self.queue.submit(std::iter::once(encoder.finish()));

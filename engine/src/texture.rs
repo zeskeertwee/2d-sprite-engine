@@ -1,8 +1,9 @@
+use crate::asset_management::Uuid;
 use anyhow::Result;
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use std::num::NonZeroU32;
+use std::ops::Deref;
 use std::sync::Arc;
-use uuid::Uuid;
 use wgpu::*;
 
 pub struct GpuTexture {
@@ -161,5 +162,13 @@ impl GpuTexture {
 
     pub fn uuid(&self) -> Uuid {
         self.uuid
+    }
+}
+
+impl Deref for GpuTexture {
+    type Target = Texture;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }

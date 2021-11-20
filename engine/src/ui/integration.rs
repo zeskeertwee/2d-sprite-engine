@@ -75,7 +75,7 @@ impl EguiIntegration {
         queue: &Queue,
         output_view: &TextureView,
         surface_config: &SurfaceConfiguration,
-        apps: &mut [&mut dyn epi::App],
+        app: &mut dyn epi::App,
     ) {
         self.platform
             .update_time(self.start_time.elapsed().as_secs_f64());
@@ -97,9 +97,7 @@ impl EguiIntegration {
         }
         .build();
 
-        for app in apps {
-            app.update(&self.platform.context(), &mut frame);
-        }
+        app.update(&self.platform.context(), &mut frame);
 
         let (_output, paint_commands) = self.platform.end_frame(Some(window));
         let paint_jobs = self.platform.context().tessellate(paint_commands);
@@ -124,5 +122,9 @@ impl EguiIntegration {
 
     pub fn set_scale_factor(&mut self, scale_factor: f32) {
         self.scale_factor = scale_factor;
+    }
+
+    pub fn render_pass_mut(&mut self) -> &mut egui_wgpu_backend::RenderPass {
+        &mut self.render_pass
     }
 }

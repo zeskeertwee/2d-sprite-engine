@@ -1,10 +1,9 @@
-use crate::asset_management::{AssetLoader, ToUuid};
+use crate::asset_management::{AssetLoader, ToUuid, Uuid};
 use crate::pipelines::RenderPipelineInit;
 use crate::scheduler::Job;
 use ahash::AHashMap;
 use parking_lot::Mutex;
 use std::sync::Arc;
-use uuid::Uuid;
 use wgpu::{Device, Queue, RenderPipeline, TextureFormat};
 
 pub struct InitPipelineJob {

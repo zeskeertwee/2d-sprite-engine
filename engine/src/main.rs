@@ -30,6 +30,8 @@ const TARGET_FPS: f64 = 144.0;
 const TARGET_FRAMETIME: f64 = 1000.0 / TARGET_FPS;
 
 fn main() {
+    asset_management::KEEP_ASSET_NAMES.store(true, std::sync::atomic::Ordering::Relaxed);
+
     match catch_unwind(|| engine_main()) {
         Ok(_) => (),
         Err(e) => {
