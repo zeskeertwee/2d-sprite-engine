@@ -1,5 +1,5 @@
 use crate::buffer::{GpuUniformBuffer, Uniform};
-use cgmath::{Matrix4, SquareMatrix, Vector2};
+use cgmath::{InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
 use std::ops::Deref;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingType,
@@ -62,6 +62,19 @@ impl Camera {
         let right = self.position.x + half_width;
         let left = self.position.x - half_width;
         cgmath::ortho(left, right, bottom, top, 0.0, 1000.0) * OPENGL_TO_WGPU_MATRIX
+    }
+
+    pub fn mouse_pos_to_world_space(&self, mouse_pos: Vector2<f32>) -> Vector2<f32> {
+        let norm_mouse_pos = Vector2::new(
+            mouse_pos.x / self.width - 0.5,
+            -mouse_pos.y / self.height + 0.5,
+        ) * 2.0;
+        let inv_proj = self
+            .ortho_proj_matrix()
+            .invert()
+            .expect("Ortho projection matrix to be inversible");
+        let result = inv_proj * Vector4::new(norm_mouse_pos.x, norm_mouse_pos.y, -1.0, 1.0);
+        Vector2::new(result.x, result.y)
     }
 
     pub fn update_uniform_buffer(&self, queue: &Queue) {

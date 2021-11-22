@@ -50,12 +50,10 @@ impl Display for Uuid {
                     None => panic!("Expedted an initialized name cache"),
                 })
                 .as_str(),
-            );
+            )
         } else {
-            f.write_str(&self.inner.to_string());
+            f.write_str(&self.inner.to_string())
         }
-
-        Ok(())
     }
 }
 
@@ -197,7 +195,7 @@ lazy_static! {
 pub struct AssetLoader {
     pub(crate) name_cache: Option<AHashMap<uuid::Uuid, String>>,
     pub(crate) active_cache_debug_ui: u8,
-    pub(crate) header_config: HeaderConfig,
+    pub(crate) header_config: Arc<HeaderConfig>,
     pub(crate) archives: AHashMap<Uuid, Archive<File>>,
     pub(crate) raw_cache: AHashMap<Uuid, Arc<Vec<u8>>>,
     pub(crate) tex_cache: AHashMap<Uuid, Arc<GpuTexture>>,
@@ -214,12 +212,12 @@ impl AssetLoader {
             } else {
                 None
             },
-            header_config: {
+            header_config: Arc::new({
                 let mut header_config = HeaderConfig::default();
                 header_config.public_key =
                     Some(PublicKey::from_bytes(PUB_KEY).expect("a valid public key"));
                 header_config
-            },
+            }),
             archives: AHashMap::new(),
             raw_cache: AHashMap::new(),
             tex_cache: AHashMap::new(),
@@ -271,14 +269,12 @@ impl AssetLoader {
         let archive_name = archive_path.file_name().unwrap().to_string_lossy();
         let uuid = Uuid::new_v5(&UUID_NAMESPACE_ASSETS, archive_name.as_bytes());
 
-        {
-            let mut lock = ASSET_LOADER.lock();
-            let archive: Archive<File> = Archive::with_config(archive_file, &lock.header_config)?;
-            lock.archives.insert(uuid, archive);
-        }
+        let header_config = Self::with_lock(|loader| Arc::clone(&loader.header_config));
+        let archive = Archive::with_config(archive_file, &header_config)?;
+        Self::with_lock(|loader| loader.archives.insert(uuid, archive));
+        Self::insert_asset_name(archive_name.to_string().as_str());
 
         info!("Loaded archive {} with UUID {}", archive_name, uuid);
-        Self::insert_asset_name(&archive_name.to_string());
 
         Ok(())
     }

@@ -12,7 +12,7 @@ use crate::scheduler::JobScheduler;
 use crate::sprite::Sprite;
 use crate::ui::integration::{EguiIntegration, EguiRequestRedrawEvent};
 use crate::ui::DebugUi;
-use crate::vertex::Vertex2;
+use crate::vertex::Vertex3;
 use log::{info, warn};
 use pollster::block_on;
 use wgpu::*;
@@ -31,7 +31,7 @@ pub struct RenderEngine {
     size: PhysicalSize<u32>,
     pipelines: Pipelines,
     camera: Camera,
-    sprite_square_vertex_buf: GpuVertexBuffer<Vertex2>,
+    sprite_square_vertex_buf: GpuVertexBuffer<Vertex3>,
     sprite_square_index_buf: GpuIndexBuffer<u16>,
     sprites: AHashMap<u64, Sprite>,
     sprite_id_counter: u64,
@@ -207,8 +207,7 @@ impl RenderEngine {
         render_pass.set_bind_group(0, &self.camera.bind_group(), &[]);
 
         for (_, sprite) in self.sprites.iter() {
-            let model_mat =
-                cgmath::Matrix4::<f32>::from_translation(cgmath::Vector3::new(0.0, 0.0, 0.0));
+            let model_mat = sprite.model_matrix();
             let model: [u8; 64] =
                 unsafe { std::mem::transmute(model_mat * cgmath::Matrix4::from_scale(200.0)) };
             render_pass.set_push_constants(ShaderStages::VERTEX, 0, &model);
@@ -261,6 +260,14 @@ impl RenderEngine {
         self.sprite_id_counter += 1;
         self.sprites.insert(id, sprite);
         id
+    }
+
+    pub fn get_sprite_mut(&mut self, id: u64) -> Option<&mut Sprite> {
+        self.sprites.get_mut(&id)
+    }
+
+    pub fn camera(&self) -> &Camera {
+        &self.camera
     }
 
     pub fn device(&self) -> &Device {

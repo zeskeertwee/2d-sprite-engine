@@ -2,7 +2,7 @@ use crate::asset_management::{AssetLoader, ToUuid};
 use crate::buffer::{GpuUniformBuffer, GpuVertexBufferLayout, Uniform};
 use crate::camera::CameraUniform;
 use crate::texture::GpuTexture;
-use crate::vertex::Vertex2;
+use crate::vertex::Vertex3;
 use wgpu::*;
 
 pub struct SpriteRenderPipeline;
@@ -46,7 +46,7 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
         vertex: VertexState {
             module: &shader,
             entry_point: "main",
-            buffers: &[Vertex2::layout().to_owned()],
+            buffers: &[Vertex3::layout().to_owned()],
         },
         fragment: Some(FragmentState {
             module: &shader,

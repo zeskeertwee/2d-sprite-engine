@@ -64,11 +64,9 @@ fn engine_main() {
     let mut render_engine = RenderEngine::new(&window, &event_loop);
     let mut last_cache_clean = Instant::now();
 
-    let sprite = Sprite::new(
-        AssetLoader::load_texture("tux-32.png").unwrap(),
-        [5.0, 5.0, 0.0],
-    );
-    render_engine.insert_sprite(sprite);
+    let tex = AssetLoader::load_texture("tux-32.png").unwrap();
+    let sprite_id = render_engine.insert_sprite(Sprite::new(tex.clone(), [5.0, 5.0, 1.0]));
+    render_engine.insert_sprite(Sprite::new(tex, [-150.0, -100.0, 0.0]));
 
     event_loop.run(move |event, _, control_flow| {
         render_engine.process_event(&event);
@@ -92,6 +90,17 @@ fn engine_main() {
                 } => {
                     render_engine.resize(*new_inner_size);
                     render_engine.update_scale_factor(scale_factor);
+                }
+                WindowEvent::CursorMoved { position, .. } => {
+                    let pos =
+                        render_engine
+                            .camera()
+                            .mouse_pos_to_world_space(cgmath::Vector2::new(
+                                position.x as f32,
+                                position.y as f32,
+                            ));
+                    render_engine.get_sprite_mut(sprite_id).unwrap().position =
+                        cgmath::Vector3::new(pos.x, pos.y, 0.0);
                 }
                 _ => (),
             },
