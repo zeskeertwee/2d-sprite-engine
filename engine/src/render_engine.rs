@@ -12,7 +12,7 @@ use crate::scheduler::JobScheduler;
 use crate::sprite::Sprite;
 use crate::ui::integration::{EguiIntegration, EguiRequestRedrawEvent};
 use crate::ui::DebugUi;
-use crate::vertex::Vertex3;
+use crate::vertex::Vertex2;
 use log::{info, warn};
 use pollster::block_on;
 use wgpu::*;
@@ -31,7 +31,7 @@ pub struct RenderEngine {
     size: PhysicalSize<u32>,
     pipelines: Pipelines,
     camera: Camera,
-    sprite_square_vertex_buf: GpuVertexBuffer<Vertex3>,
+    sprite_square_vertex_buf: GpuVertexBuffer<Vertex2>,
     sprite_square_index_buf: GpuIndexBuffer<u16>,
     sprites: AHashMap<u64, Sprite>,
     sprite_id_counter: u64,
@@ -211,6 +211,11 @@ impl RenderEngine {
             let model: [u8; 64] =
                 unsafe { std::mem::transmute(model_mat * cgmath::Matrix4::from_scale(200.0)) };
             render_pass.set_push_constants(ShaderStages::VERTEX, 0, &model);
+            render_pass.set_push_constants(
+                ShaderStages::VERTEX,
+                std::mem::size_of_val(&model) as u32,
+                &[sprite.position.z as u8],
+            );
             render_pass.set_bind_group(
                 1,
                 unsafe { sprite.texture.load().static_bind_group() },

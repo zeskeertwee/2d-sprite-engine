@@ -2,7 +2,8 @@ use crate::asset_management::{AssetLoader, ToUuid};
 use crate::buffer::{GpuUniformBuffer, GpuVertexBufferLayout, Uniform};
 use crate::camera::CameraUniform;
 use crate::texture::GpuTexture;
-use crate::vertex::Vertex3;
+use crate::vertex::Vertex2;
+use cgmath::{Matrix4, Vector2};
 use wgpu::*;
 
 pub struct SpriteRenderPipeline;
@@ -33,11 +34,18 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
             ),
             &GpuTexture::build_bind_group_layout(&device, "Sprite RPL Texture BGL"),
         ],
-        push_constant_ranges: &[PushConstantRange {
-            // model matrix
-            stages: ShaderStages::VERTEX,
-            range: 0..64,
-        }],
+        push_constant_ranges: &[
+            PushConstantRange {
+                // model matrix
+                stages: ShaderStages::VERTEX,
+                range: 0..64,
+            },
+            PushConstantRange {
+                // z-depth
+                stages: ShaderStages::VERTEX,
+                range: 64..65,
+            },
+        ],
     });
 
     device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -46,7 +54,7 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
         vertex: VertexState {
             module: &shader,
             entry_point: "main",
-            buffers: &[Vertex3::layout().to_owned()],
+            buffers: &[Vertex2::layout().to_owned()],
         },
         fragment: Some(FragmentState {
             module: &shader,
@@ -74,4 +82,23 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
             alpha_to_coverage_enabled: false,
         },
     })
+}
+
+pub struct SpritePushConstant {
+    model: Matrix4<f32>,
+    z_layer: u8,
+}
+
+impl SpritePushConstant {
+    pub fn new(model: Matrix4<f32>, z_layer: u8) -> Self {
+        Self { model, z_layer }
+    }
+
+    pub fn as_bytes(&self) -> [u8; 65] {
+        let mut bytes = [0u8; 65];
+        let model_bytes: [u8; 64] = unsafe { std::mem::transmute(self.model) };
+        bytes[0..64].copy_from_slice(&model_bytes);
+        bytes[64] = self.z_layer;
+        bytes
+    }
 }
