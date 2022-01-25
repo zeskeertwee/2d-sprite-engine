@@ -214,7 +214,7 @@ impl RenderEngine {
             render_pass.set_push_constants(
                 ShaderStages::VERTEX,
                 std::mem::size_of_val(&model) as u32,
-                &[sprite.position.z as u8],
+                &[sprite.position.z as u8, 0, 0, 0],
             );
             render_pass.set_bind_group(
                 1,

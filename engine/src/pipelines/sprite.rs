@@ -36,15 +36,22 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
         ],
         push_constant_ranges: &[
             PushConstantRange {
-                // model matrix
-                stages: ShaderStages::VERTEX,
-                range: 0..64,
-            },
-            PushConstantRange {
-                // z-depth
-                stages: ShaderStages::VERTEX,
-                range: 64..65,
-            },
+		// 0..64 model matrix
+		// 64..65 z-depth
+		stages: ShaderStages::VERTEX,
+		range: 0..68, // has to align to 4
+	    },
+
+	    //PushConstantRange {
+            //    // model matrix
+            //    stages: ShaderStages::VERTEX,
+            //    range: 0..64,
+            //},
+            //PushConstantRange {
+            //    // z-depth
+            //    stages: ShaderStages::VERTEX,
+            //    range: 64..65,
+            //},
         ],
     });
 
