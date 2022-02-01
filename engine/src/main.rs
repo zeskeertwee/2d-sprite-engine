@@ -7,6 +7,7 @@ mod draw_batch;
 mod pipelines;
 mod render_engine;
 mod scheduler;
+mod scripting;
 mod sprite;
 mod texture;
 mod ui;
@@ -18,6 +19,7 @@ use std::panic::catch_unwind;
 use std::time::Instant;
 
 use crate::asset_management::AssetLoader;
+use crate::scripting::WASMEngine;
 use crate::sprite::Sprite;
 use log::{debug, error, info, trace, warn};
 use winit::{
@@ -26,8 +28,8 @@ use winit::{
     window::WindowBuilder,
 };
 
-const TARGET_FPS: f64 = 144.0;
-const TARGET_FRAMETIME: f64 = 1000.0 / TARGET_FPS;
+//const TARGET_FPS: f64 = 144.0;
+//const TARGET_FRAMETIME: f64 = 1000.0 / TARGET_FPS;
 
 fn main() {
     asset_management::KEEP_ASSET_NAMES.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -48,15 +50,22 @@ fn main() {
                 "The engine encountered a fatal error and had to exit: {}",
                 err
             ));
-            dialog_box.show();
+            match dialog_box.show() {
+                Ok(_) => (),
+                Err(e) => error!("Error showing dialog box: {}", e),
+            }
         }
     }
 }
 
 fn engine_main() {
     pretty_env_logger::init();
+
+    log::trace!("Vach version: {}", vach::VERSION);
+
     AssetLoader::add_archive("./res/redist/shaders.pak").unwrap();
     AssetLoader::add_archive("./res/redist/assets.pak").unwrap();
+    AssetLoader::add_archive("./res/redist/scripts.pak").unwrap();
 
     let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
@@ -68,6 +77,16 @@ fn engine_main() {
     let sprite_id = render_engine.insert_sprite(Sprite::new(tex.clone(), [5.0, 5.0, 1.0]));
     render_engine.insert_sprite(Sprite::new(tex, [-150.0, -100.0, 0.0]));
 
+    std::thread::spawn(|| {
+        let compile_job = scripting::WASMPreCompileJob::new("test-script.wasm");
+        let compile_tracker = crate::scheduler::JobScheduler::submit(box compile_job);
+        compile_tracker.flush().unwrap();
+
+        WASMEngine::run_script("test-script.wasm");
+        return;
+    });
+
+    log::info!("Entering main loop");
     event_loop.run(move |event, _, control_flow| {
         render_engine.process_event(&event);
 
@@ -106,6 +125,7 @@ fn engine_main() {
             },
             Event::RedrawRequested(_) => {
                 render_engine.update();
+
                 match render_engine.render(&window) {
                     Ok(_) => (),
                     Err(wgpu::SurfaceError::Lost) => {

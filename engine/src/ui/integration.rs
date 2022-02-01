@@ -17,7 +17,7 @@ pub enum EguiRequestRedrawEvent {
 
 struct RepaintSignaller(Mutex<EventLoopProxy<EguiRequestRedrawEvent>>);
 
-impl epi::RepaintSignal for RepaintSignaller {
+impl epi::backend::RepaintSignal for RepaintSignaller {
     fn request_repaint(&self) {
         self.0
             .lock()
@@ -81,21 +81,21 @@ impl EguiIntegration {
             .update_time(self.start_time.elapsed().as_secs_f64());
         let render_start = Instant::now();
         self.platform.begin_frame();
-        let mut app_output = epi::backend::AppOutput::default();
+        let app_output = epi::backend::AppOutput::default();
 
-        let mut frame = epi::backend::FrameBuilder {
-            info: epi::IntegrationInfo {
-                web_info: None,
-                cpu_usage: self.previous_frame_time,
-                native_pixels_per_point: Some(self.scale_factor),
-                name: "egui-sprite-engine",
-                prefer_dark_mode: Some(true),
+        let mut frame = epi::Frame(std::sync::Arc::new(std::sync::Mutex::new(
+            epi::backend::FrameData {
+                info: epi::IntegrationInfo {
+                    web_info: None,
+                    cpu_usage: self.previous_frame_time,
+                    native_pixels_per_point: Some(self.scale_factor),
+                    name: "egui-sprite-engine",
+                    prefer_dark_mode: Some(true),
+                },
+                output: app_output,
+                repaint_signal: self.repaint_signaller.clone(),
             },
-            tex_allocator: &mut self.render_pass,
-            output: &mut app_output,
-            repaint_signal: self.repaint_signaller.clone(),
-        }
-        .build();
+        )));
 
         app.update(&self.platform.context(), &mut frame);
 
@@ -110,7 +110,7 @@ impl EguiIntegration {
         };
 
         self.render_pass
-            .update_texture(device, queue, &self.platform.context().texture());
+            .update_texture(device, queue, &self.platform.context().font_image());
         self.render_pass.update_user_textures(device, queue);
         self.render_pass
             .update_buffers(&device, &queue, &paint_jobs, &screen_descriptor);

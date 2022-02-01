@@ -1,17 +1,22 @@
 use super::EguiWindow;
+use crate::ui::MenuCategory;
 use egui::{CtxRef, Ui};
-use egui_wgpu_backend::epi::Frame;
+use epi::Frame;
 use wgpu::PresentMode;
 
 pub struct DebugFrametimeWindow {
     /// the frametime, in seconds
-    frametime: f64,
+    pub(super) frametime: f64,
     present_mode: PresentMode,
 }
 
 impl EguiWindow for DebugFrametimeWindow {
     fn title(&self) -> &'static str {
         "Frametime"
+    }
+
+    fn menu_category(&self) -> MenuCategory {
+        MenuCategory::Performance
     }
 
     fn draw(&mut self, ui: &mut Ui) {

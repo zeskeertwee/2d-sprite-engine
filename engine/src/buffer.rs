@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use wgpu::util::{BufferInitDescriptor, DeviceExt};
 use wgpu::{
-    BindGroup, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer,
+    BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer,
     BufferUsages, Device, IndexFormat, Queue, VertexBufferLayout,
 };
 

@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Once};
 use std::thread;
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use wgpu::{Device, Queue};
 
 // TODO: Priority levels for jobs?
@@ -59,8 +59,29 @@ impl JobStateTracker {
     }
 }
 
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum ThreadState {
+    Idle = 0,
+    Processing = 1,
+}
+
+pub struct ThreadStateTracker {
+    inner: Arc<AtomicU8>,
+}
+
+impl ThreadStateTracker {
+    pub fn state(&self) -> ThreadState {
+        match self.inner.load(Ordering::Relaxed) {
+            0 => ThreadState::Idle,
+            1 => ThreadState::Processing,
+            x => panic!("Invalid JobState: {}", x),
+        }
+    }
+}
+
 pub struct JobScheduler {
-    handles: Vec<JoinHandle<()>>,
+    handles: Vec<(JoinHandle<()>, ThreadStateTracker)>,
     job_queue: Arc<SegQueue<(Arc<AtomicU8>, Box<dyn Job>)>>,
     terminate: Arc<AtomicBool>,
     device: Option<Arc<Device>>,
@@ -100,11 +121,20 @@ impl JobScheduler {
             )
         });
 
+        let thread_state_tracker = Arc::new(AtomicU8::new(ThreadState::Idle as u8));
+        let t_thread_state_tracker = Arc::clone(&thread_state_tracker);
         let handle = thread::Builder::new()
             .name("JobWorker".to_string())
-            .spawn(|| worker_main(device, queue, job_queue, terminate))?;
+            .spawn(|| worker_main(device, queue, job_queue, terminate, t_thread_state_tracker))?;
 
-        Self::with_lock(|scheduler| scheduler.handles.push(handle));
+        Self::with_lock(|scheduler| {
+            scheduler.handles.push((
+                handle,
+                ThreadStateTracker {
+                    inner: thread_state_tracker,
+                },
+            ))
+        });
 
         Ok(())
     }
@@ -140,6 +170,16 @@ impl JobScheduler {
             thread::sleep(Duration::from_micros(50));
         }
     }
+
+    pub fn thread_states() -> Vec<ThreadState> {
+        Self::with_lock(|scheduler| {
+            scheduler
+                .handles
+                .iter()
+                .map(|(_, state)| state.state())
+                .collect()
+        })
+    }
 }
 
 fn clone_or_panic<T>(v: &Option<Arc<T>>, msg: &str) -> Arc<T> {
@@ -154,21 +194,34 @@ fn worker_main(
     queue: Arc<Queue>,
     job_queue: Arc<SegQueue<(Arc<AtomicU8>, Box<dyn Job>)>>,
     terminate: Arc<AtomicBool>,
+    thread_state: Arc<AtomicU8>,
 ) {
     loop {
         match job_queue.pop() {
             Some((job_state, mut job)) => {
+                thread_state.store(ThreadState::Processing as u8, Ordering::Relaxed);
                 job_state.store(JobState::Processing as u8, Ordering::Relaxed);
+                let start = Instant::now();
                 match job.run(&device, &queue) {
                     Ok(()) => {
                         job_state.store(JobState::Succeeded as u8, Ordering::Relaxed);
-                        info!("Job {} finished", job.type_name())
+                        info!(
+                            "Job {} finished in {:.2} ms",
+                            job.type_name(),
+                            start.elapsed().as_secs_f64() * 1000.0
+                        );
                     }
                     Err(e) => {
                         job_state.store(JobState::Failed as u8, Ordering::Relaxed);
-                        warn!("Job {} returned an error: {}", job.type_name(), e)
+                        warn!(
+                            "Job {} returned an error: {} in {:?} ms",
+                            job.type_name(),
+                            e,
+                            start.elapsed().as_secs_f64() * 1000.0
+                        )
                     }
                 }
+                thread_state.store(ThreadState::Idle as u8, Ordering::Relaxed);
             }
             None => {
                 if terminate.load(Ordering::Relaxed) {

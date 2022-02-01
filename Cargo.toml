@@ -1,5 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-	"engine"
+	"engine",
 ]
+
+[profile.dev]
+debug = false
+
+[profile.release]
+lto = "fat"

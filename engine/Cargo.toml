@@ -8,11 +8,10 @@ edition = "2018"
 
 [dependencies]
 # trace and replay features enable serde implementations on wgpu types
-wgpu = { version = "0.11.0", features = ["trace", "replay"] }
+wgpu = { version = "0.12.0", features = ["trace", "replay"] }
 image = "0.23.14"
-winit = "0.25.0"
+winit = "0.26.1"
 cgmath = "0.18.0"
-vach = "0.2.1"
 pretty_env_logger = "0.4.0"
 log = "0.4.14"
 pollster = "0.2.4"
@@ -26,7 +25,15 @@ uuid = { version = "0.8.2", features = ["v5"] }
 serde = { version = "1.0.130", features = ["derive"] }
 crossbeam = "0.8.1"
 arc-swap = "1.4.0"
-egui = "0.15.0"
-egui_winit_platform = "0.11.0"
-egui_wgpu_backend = "0.14.0"
-epi = "0.15.0"
+egui = "0.16.1"
+egui_winit_platform = "0.13.0"
+egui_wgpu_backend = "0.16.0"
+epi = "0.16.0"
+dashmap = "5.0.0"
+
+wasmtime = "0.33.0"
+wasmtime-wasi = "0.33.0"
+
+[dependencies.vach]
+git = "https://github.com/zeskeertwee/vach"
+rev = "fd1ad87a1719b710520595f842b4a2f98483697b"

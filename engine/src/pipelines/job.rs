@@ -1,4 +1,4 @@
-use crate::asset_management::{AssetLoader, ToUuid, Uuid};
+use crate::asset_management::{ToUuid, Uuid};
 use crate::pipelines::RenderPipelineInit;
 use crate::scheduler::Job;
 use ahash::AHashMap;

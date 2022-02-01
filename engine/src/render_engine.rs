@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 use crate::asset_management::{AssetLoader, ToUuid};
 use crate::buffer::{GpuIndexBuffer, GpuVertexBuffer};
 use crate::camera::Camera;
+use crate::pipelines::sprite::SpritePushConstant;
 use crate::pipelines::Pipelines;
 use crate::scheduler::JobScheduler;
 use crate::sprite::Sprite;
@@ -159,7 +160,7 @@ impl RenderEngine {
 
         self.egui_debug_ui
             .cache_window_mut()
-            .update(&self.device, self.egui_integration.render_pass_mut())
+            .update(&self.device, self.egui_integration.render_pass_mut());
     }
 
     pub fn render(&mut self, window: &Window) -> Result<(), SurfaceError> {
@@ -207,15 +208,18 @@ impl RenderEngine {
         render_pass.set_bind_group(0, &self.camera.bind_group(), &[]);
 
         for (_, sprite) in self.sprites.iter() {
-            let model_mat = sprite.model_matrix();
-            let model: [u8; 64] =
-                unsafe { std::mem::transmute(model_mat * cgmath::Matrix4::from_scale(200.0)) };
-            render_pass.set_push_constants(ShaderStages::VERTEX, 0, &model);
-            render_pass.set_push_constants(
-                ShaderStages::VERTEX,
-                std::mem::size_of_val(&model) as u32,
-                &[sprite.position.z as u8, 0, 0, 0],
-            );
+            let uniform = SpritePushConstant::new(sprite.model_matrix(), sprite.position.z as u8);
+
+            //let model_mat = sprite.model_matrix();
+            //let model: [u8; 64] =
+            //    unsafe { std::mem::transmute(model_mat * cgmath::Matrix4::from_scale(200.0)) };
+            //render_pass.set_push_constants(ShaderStages::VERTEX, 0, &model);
+            //render_pass.set_push_constants(
+            //    ShaderStages::VERTEX,
+            //    std::mem::size_of_val(&model) as u32,
+            //    &[sprite.position.z as u8, 0, 0, 0],
+            //);
+            render_pass.set_push_constants(ShaderStages::VERTEX, 0, &uniform.as_bytes());
             render_pass.set_bind_group(
                 1,
                 unsafe { sprite.texture.load().static_bind_group() },

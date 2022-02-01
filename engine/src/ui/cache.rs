@@ -1,11 +1,13 @@
 use super::EguiWindow;
 use crate::asset_management::GpuTextureRef;
 use crate::asset_management::Uuid;
+use crate::ui::MenuCategory;
 use crate::AssetLoader;
 use ahash::AHashMap;
 use egui::Ui;
 use image::load;
 use std::sync::Arc;
+use std::time::Instant;
 use wgpu::{Device, FilterMode};
 
 pub struct CacheDebugUi {
@@ -17,8 +19,9 @@ impl CacheDebugUi {
         let mut loaded_uuids = Vec::new();
         let mut to_remove = Vec::new();
 
-        AssetLoader::with_lock(|loader| {
-            for (uuid, tex) in loader.tex_cache.iter() {
+        AssetLoader::with_loader(|loader| {
+            for v in loader.tex_cache.iter() {
+                let (uuid, tex) = (v.key(), v.value());
                 if !self.egui_textures.contains_key(uuid) {
                     let tex_id = render_pass.egui_texture_from_wgpu_texture(
                         device,
@@ -66,6 +69,10 @@ impl Drop for CacheDebugUi {
 impl EguiWindow for CacheDebugUi {
     fn title(&self) -> &'static str {
         "Texture cache"
+    }
+
+    fn menu_category(&self) -> MenuCategory {
+        MenuCategory::Debug
     }
 
     fn draw(&mut self, ui: &mut Ui) {

@@ -1,5 +1,5 @@
 use crate::buffer::{GpuUniformBuffer, Uniform};
-use cgmath::{InnerSpace, Matrix4, SquareMatrix, Vector2, Vector3, Vector4};
+use cgmath::{Matrix4, SquareMatrix, Vector2, Vector4};
 use std::ops::Deref;
 use wgpu::{
     BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutEntry, BindingType,
