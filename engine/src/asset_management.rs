@@ -396,7 +396,7 @@ impl AssetLoader {
             tex: tex_ref.clone(),
         };
 
-        JobScheduler::submit(box job);
+        JobScheduler::submit(Box::new(job));
         Ok(tex_ref)
     }
 
@@ -502,6 +502,7 @@ impl Job for TextureLoadJob {
 }
 
 fn clean_cache_inner<T>(cache: &DashMap<Uuid, Arc<T>>, max_strong_ref: usize) -> usize {
+    puffin::profile_function!();
     let mut to_remove = Vec::new();
 
     for v in cache.iter() {
@@ -520,7 +521,7 @@ fn clean_cache_inner<T>(cache: &DashMap<Uuid, Arc<T>>, max_strong_ref: usize) ->
         }
         assert_eq!(Arc::strong_count(&arc), 1);
         cache.remove(uuid);
-        info!("Removed {:?} from cache", uuid);
+        let name = info!("Removed {:?} from cache", uuid);
     }
 
     to_remove.len()

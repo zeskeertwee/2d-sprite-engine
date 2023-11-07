@@ -9,3 +9,6 @@ debug = false
 
 [profile.release]
 lto = "fat"
+
+[patch.crates-io]
+ipnet = { path = "./ipnet" }

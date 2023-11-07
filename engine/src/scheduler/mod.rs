@@ -3,7 +3,7 @@ use anyhow::Result;
 use crossbeam::queue::SegQueue;
 use lazy_static::lazy_static;
 use log::{info, warn};
-use parking_lot::Mutex;
+use parking_lot::{Condvar, Mutex};
 use std::ops::DerefMut;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Once};
@@ -86,6 +86,7 @@ pub struct JobScheduler {
     terminate: Arc<AtomicBool>,
     device: Option<Arc<Device>>,
     queue: Option<Arc<Queue>>,
+    condvar: Arc<(Condvar, Mutex<()>)>,
 }
 
 impl JobScheduler {
@@ -96,6 +97,7 @@ impl JobScheduler {
             terminate: Arc::new(AtomicBool::new(false)),
             device: None,
             queue: None,
+            condvar: Arc::new((Condvar::new(), Mutex::new(()))),
         }
     }
 
@@ -112,12 +114,13 @@ impl JobScheduler {
     }
 
     pub fn spawn_worker() -> Result<()> {
-        let (job_queue, terminate, device, queue) = Self::with_lock(|scheduler| {
+        let (job_queue, terminate, device, queue, condvar) = Self::with_lock(|scheduler| {
             (
                 Arc::clone(&scheduler.job_queue),
                 Arc::clone(&scheduler.terminate),
                 clone_or_panic(&scheduler.device, "expected a initialized job scheduler"),
                 clone_or_panic(&scheduler.queue, "expected a initialized job scheduler"),
+                Arc::clone(&scheduler.condvar),
             )
         });
 
@@ -125,7 +128,16 @@ impl JobScheduler {
         let t_thread_state_tracker = Arc::clone(&thread_state_tracker);
         let handle = thread::Builder::new()
             .name("JobWorker".to_string())
-            .spawn(|| worker_main(device, queue, job_queue, terminate, t_thread_state_tracker))?;
+            .spawn(|| {
+                worker_main(
+                    device,
+                    queue,
+                    condvar,
+                    job_queue,
+                    terminate,
+                    t_thread_state_tracker,
+                )
+            })?;
 
         Self::with_lock(|scheduler| {
             scheduler.handles.push((
@@ -154,6 +166,9 @@ impl JobScheduler {
             scheduler.job_queue.push((state_clone, job));
             if scheduler.handles.len() == 0 {
                 warn!("No JobWorkers are running, but a job was submitted!");
+            }
+            if !scheduler.condvar.0.notify_one() {
+                warn!("Condvar did not wake up a JobWorker!");
             }
         });
 
@@ -192,11 +207,13 @@ fn clone_or_panic<T>(v: &Option<Arc<T>>, msg: &str) -> Arc<T> {
 fn worker_main(
     device: Arc<Device>,
     queue: Arc<Queue>,
+    condvar: Arc<(Condvar, Mutex<()>)>,
     job_queue: Arc<SegQueue<(Arc<AtomicU8>, Box<dyn Job>)>>,
     terminate: Arc<AtomicBool>,
     thread_state: Arc<AtomicU8>,
 ) {
     loop {
+        condvar.0.wait(&mut condvar.1.lock());
         match job_queue.pop() {
             Some((job_state, mut job)) => {
                 thread_state.store(ThreadState::Processing as u8, Ordering::Relaxed);

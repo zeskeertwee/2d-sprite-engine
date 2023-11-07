@@ -1,9 +1,10 @@
-#![feature(box_syntax, type_alias_impl_trait)]
+#![feature(type_alias_impl_trait)]
 
 mod asset_management;
 mod buffer;
 mod camera;
 mod draw_batch;
+mod ecs;
 mod pipelines;
 mod render_engine;
 mod scheduler;
@@ -13,12 +14,13 @@ mod texture;
 mod ui;
 mod vertex;
 
+use bevy_ecs::prelude::*;
 use dialog::DialogBox;
-use render_engine::RenderEngine;
 use std::panic::catch_unwind;
 use std::time::Instant;
 
 use crate::asset_management::AssetLoader;
+use crate::render_engine::RenderEngineResources;
 use crate::scripting::WASMEngine;
 use crate::sprite::Sprite;
 use log::{debug, error, info, trace, warn};
@@ -60,6 +62,9 @@ fn main() {
 
 fn engine_main() {
     pretty_env_logger::init();
+    puffin::set_scopes_on(true);
+
+    let srv = puffin_http::Server::new("0.0.0.0:1999").unwrap();
 
     log::trace!("Vach version: {}", vach::VERSION);
 
@@ -70,7 +75,7 @@ fn engine_main() {
     let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let mut render_engine = RenderEngine::new(&window, &event_loop);
+    let mut render_engine = RenderEngineResources::new(window, &event_loop);
     let mut last_cache_clean = Instant::now();
 
     let tex = AssetLoader::load_texture("tux-32.png").unwrap();
@@ -79,7 +84,7 @@ fn engine_main() {
 
     std::thread::spawn(|| {
         let compile_job = scripting::WASMPreCompileJob::new("test-script.wasm");
-        let compile_tracker = crate::scheduler::JobScheduler::submit(box compile_job);
+        let compile_tracker = crate::scheduler::JobScheduler::submit(Box::new(compile_job));
         compile_tracker.flush().unwrap();
 
         WASMEngine::run_script("test-script.wasm");
@@ -91,42 +96,45 @@ fn engine_main() {
         render_engine.process_event(&event);
 
         match event {
-            Event::WindowEvent { event, window_id } if window_id == window.id() => match event {
-                WindowEvent::CloseRequested
-                | WindowEvent::KeyboardInput {
-                    input:
-                        KeyboardInput {
-                            state: ElementState::Pressed,
-                            virtual_keycode: Some(VirtualKeyCode::Escape),
-                            ..
-                        },
-                    ..
-                } => *control_flow = ControlFlow::Exit,
-                WindowEvent::Resized(new_size) => render_engine.resize(new_size),
-                WindowEvent::ScaleFactorChanged {
-                    new_inner_size,
-                    scale_factor,
-                } => {
-                    render_engine.resize(*new_inner_size);
-                    render_engine.update_scale_factor(scale_factor);
+            Event::WindowEvent { event, window_id } if window_id == render_engine.window_id() => {
+                match event {
+                    WindowEvent::CloseRequested
+                    | WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state: ElementState::Pressed,
+                                virtual_keycode: Some(VirtualKeyCode::Escape),
+                                ..
+                            },
+                        ..
+                    } => *control_flow = ControlFlow::Exit,
+                    WindowEvent::Resized(new_size) => render_engine.resize(new_size),
+                    WindowEvent::ScaleFactorChanged {
+                        new_inner_size,
+                        scale_factor,
+                    } => {
+                        render_engine.resize(*new_inner_size);
+                        render_engine.update_scale_factor(scale_factor);
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        let pos =
+                            render_engine
+                                .camera()
+                                .mouse_pos_to_world_space(cgmath::Vector2::new(
+                                    position.x as f32,
+                                    position.y as f32,
+                                ));
+                        render_engine.get_sprite_mut(sprite_id).unwrap().position =
+                            cgmath::Vector3::new(pos.x, pos.y, 0.0);
+                    }
+                    _ => (),
                 }
-                WindowEvent::CursorMoved { position, .. } => {
-                    let pos =
-                        render_engine
-                            .camera()
-                            .mouse_pos_to_world_space(cgmath::Vector2::new(
-                                position.x as f32,
-                                position.y as f32,
-                            ));
-                    render_engine.get_sprite_mut(sprite_id).unwrap().position =
-                        cgmath::Vector3::new(pos.x, pos.y, 0.0);
-                }
-                _ => (),
-            },
+            }
             Event::RedrawRequested(_) => {
+                puffin::GlobalProfiler::lock().new_frame();
                 render_engine.update();
 
-                match render_engine.render(&window) {
+                match render_engine.render() {
                     Ok(_) => (),
                     Err(wgpu::SurfaceError::Lost) => {
                         render_engine.reconfigure_surface();
@@ -146,7 +154,7 @@ fn engine_main() {
             }
             Event::MainEventsCleared
             | Event::UserEvent(ui::integration::EguiRequestRedrawEvent::RequestRedraw) => {
-                window.request_redraw()
+                render_engine.request_redraw();
             }
             _ => (),
         }

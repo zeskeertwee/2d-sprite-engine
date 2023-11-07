@@ -47,7 +47,7 @@ impl WASMEngine {
         linker
             .get_default(&mut store, "")
             .unwrap()
-            .typed::<(), (), _>(&store)
+            .typed::<(), ()>(&store)
             .unwrap()
             .call(&mut store, ())
             .unwrap();

@@ -1,5 +1,6 @@
 use crate::ui::cache::CacheDebugUi;
 use crate::ui::fps::DebugFrametimeWindow;
+use crate::ui::profiler::PuffinProfilerWindow;
 use crate::ui::scheduler::SchedulerWorkerThreadWindow;
 use ahash::AHashMap;
 use egui::{CtxRef, Ui, Vec2};
@@ -10,6 +11,7 @@ use wgpu::PresentMode;
 mod cache;
 mod fps;
 pub mod integration;
+mod profiler;
 mod scheduler;
 
 trait EguiWindow {
@@ -31,6 +33,8 @@ pub struct DebugUi {
     cache_window: CacheDebugUi,
     show_scheduler_window: bool,
     scheduler_window: SchedulerWorkerThreadWindow,
+    show_profile_window: bool,
+    profile_window: PuffinProfilerWindow,
 }
 
 impl epi::App for DebugUi {
@@ -51,6 +55,7 @@ impl epi::App for DebugUi {
 
                 ui.menu_button("Preformance", |ui| {
                     ui.checkbox(&mut self.show_fps_window, "FPS & Present mode");
+                    ui.checkbox(&mut self.show_profile_window, "Puffin profiler");
                 });
             });
         });
@@ -70,6 +75,12 @@ impl epi::App for DebugUi {
         if self.show_scheduler_window {
             egui::Window::new(self.scheduler_window.title()).show(ctx, |ui| {
                 self.scheduler_window.draw(ui);
+            });
+        }
+
+        if self.show_profile_window {
+            egui::Window::new(self.profile_window.title()).show(ctx, |ui| {
+                self.profile_window.draw(ui);
             });
         }
     }

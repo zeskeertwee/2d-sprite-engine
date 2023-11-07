@@ -77,6 +77,7 @@ impl EguiIntegration {
         surface_config: &SurfaceConfiguration,
         app: &mut dyn epi::App,
     ) {
+        puffin::profile_function!("egui_render");
         self.platform
             .update_time(self.start_time.elapsed().as_secs_f64());
         let render_start = Instant::now();

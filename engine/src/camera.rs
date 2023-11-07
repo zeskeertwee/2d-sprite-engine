@@ -78,6 +78,7 @@ impl Camera {
     }
 
     pub fn update_uniform_buffer(&self, queue: &Queue) {
+        puffin::profile_function!();
         let uniform = CameraUniform {
             proj: self.ortho_proj_matrix().into(),
         };
