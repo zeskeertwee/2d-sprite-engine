@@ -259,10 +259,9 @@ impl RenderEngineResources {
         };
 
         {
-            puffin::profile_scope!("update_sprite_constants");
+            puffin::profile_scope!("draw_sprites");
             for (_, sprite) in self.sprites.iter() {
-                let uniform =
-                    SpritePushConstant::new(sprite.model_matrix(), sprite.position.z as u8);
+                let uniform = SpritePushConstant::new(sprite.model_matrix(), sprite.position.z);
 
                 //let model_mat = sprite.model_matrix();
                 //let model: [u8; 64] =

@@ -2,9 +2,9 @@ use crate::asset_management::ToUuid;
 use anyhow::Result;
 use crossbeam::queue::SegQueue;
 use lazy_static::lazy_static;
-use log::{info, warn};
+use log::{info, trace, warn};
 use parking_lot::{Condvar, Mutex};
-use std::ops::DerefMut;
+use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Once};
 use std::thread;
@@ -40,12 +40,13 @@ pub enum JobState {
 }
 
 pub struct JobStateTracker {
-    inner: Arc<AtomicU8>,
+    state: Arc<AtomicU8>,
+    condvar: Arc<(Condvar, Mutex<()>)>,
 }
 
 impl JobStateTracker {
     pub fn state(&self) -> JobState {
-        match self.inner.load(Ordering::Relaxed) {
+        match self.state.load(Ordering::Relaxed) {
             0 => JobState::Queued,
             1 => JobState::Processing,
             2 => JobState::Failed,
@@ -55,6 +56,8 @@ impl JobStateTracker {
     }
 
     pub fn flush(&self) -> Result<(), ()> {
+        self.condvar.0.wait(&mut self.condvar.1.lock());
+
         loop {
             if self.state() == JobState::Succeeded {
                 return Ok(());
@@ -62,7 +65,15 @@ impl JobStateTracker {
             if self.state() == JobState::Failed {
                 return Err(());
             }
-            std::thread::sleep(Duration::from_micros(50));
+        }
+    }
+}
+
+impl Clone for JobStateTracker {
+    fn clone(&self) -> Self {
+        Self {
+            state: Arc::clone(&self.state),
+            condvar: Arc::clone(&self.condvar),
         }
     }
 }
@@ -90,7 +101,7 @@ impl ThreadStateTracker {
 
 pub struct JobScheduler {
     handles: Vec<(JoinHandle<()>, ThreadStateTracker)>,
-    job_queue: Arc<SegQueue<(Arc<AtomicU8>, Box<dyn Job>)>>,
+    job_queue: Arc<SegQueue<(JobStateTracker, Box<dyn Job>)>>,
     terminate: Arc<AtomicBool>,
     device: Option<Arc<Device>>,
     queue: Option<Arc<Queue>>,
@@ -168,10 +179,13 @@ impl JobScheduler {
 
     pub fn submit(job: Box<dyn Job>) -> JobStateTracker {
         let state = Arc::new(AtomicU8::new(JobState::Queued as u8));
-        let state_clone = Arc::clone(&state);
+        let condvar = Arc::new((Condvar::new(), Mutex::new(())));
+        let tracker = JobStateTracker { state, condvar };
+
+        let tracker_clone = tracker.clone();
 
         Self::with_lock(|scheduler| {
-            scheduler.job_queue.push((state_clone, job));
+            scheduler.job_queue.push((tracker_clone, job));
             if scheduler.handles.len() == 0 {
                 warn!("No JobWorkers are running, but a job was submitted!");
             }
@@ -180,7 +194,7 @@ impl JobScheduler {
             }
         });
 
-        JobStateTracker { inner: state }
+        tracker
     }
 
     pub fn flush() {
@@ -216,7 +230,7 @@ fn worker_main(
     device: Arc<Device>,
     queue: Arc<Queue>,
     condvar: Arc<(Condvar, Mutex<()>)>,
-    job_queue: Arc<SegQueue<(Arc<AtomicU8>, Box<dyn Job>)>>,
+    job_queue: Arc<SegQueue<(JobStateTracker, Box<dyn Job>)>>,
     terminate: Arc<AtomicBool>,
     thread_state: Arc<AtomicU8>,
 ) {
@@ -225,7 +239,9 @@ fn worker_main(
         match job_queue.pop() {
             Some((job_state, mut job)) => {
                 thread_state.store(ThreadState::Processing as u8, Ordering::Relaxed);
-                job_state.store(JobState::Processing as u8, Ordering::Relaxed);
+                job_state
+                    .state
+                    .store(JobState::Processing as u8, Ordering::Relaxed);
                 let start = Instant::now();
                 match job.run(&device, &queue) {
                     Ok(()) => {
@@ -238,10 +254,15 @@ fn worker_main(
                             );
                         }
                         drop(job);
-                        job_state.store(JobState::Succeeded as u8, Ordering::Relaxed);
+                        job_state
+                            .state
+                            .store(JobState::Succeeded as u8, Ordering::Relaxed);
+                        job_state.condvar.0.notify_all();
                     }
                     Err(e) => {
-                        job_state.store(JobState::Failed as u8, Ordering::Relaxed);
+                        job_state
+                            .state
+                            .store(JobState::Failed as u8, Ordering::Relaxed);
                         warn!(
                             "Job {} returned an error: {} in {:?} ms",
                             job.type_name(),

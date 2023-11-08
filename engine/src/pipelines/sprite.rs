@@ -37,7 +37,7 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
         push_constant_ranges: &[
             PushConstantRange {
                 // 0..64 model matrix
-                // 64..65 z-depth
+                // 64..68 z-depth
                 stages: ShaderStages::VERTEX,
                 range: 0..68, // has to align to 4
             },
@@ -93,11 +93,11 @@ pub fn init(device: &Device, format: TextureFormat) -> RenderPipeline {
 
 pub struct SpritePushConstant {
     model: Matrix4<f32>,
-    z_layer: u8,
+    z_layer: f32,
 }
 
 impl SpritePushConstant {
-    pub fn new(model: Matrix4<f32>, z_layer: u8) -> Self {
+    pub fn new(model: Matrix4<f32>, z_layer: f32) -> Self {
         Self { model, z_layer }
     }
 
@@ -106,7 +106,7 @@ impl SpritePushConstant {
         let model_bytes: [u8; 64] =
             unsafe { std::mem::transmute(self.model * cgmath::Matrix4::from_scale(200.0)) };
         bytes[0..64].copy_from_slice(&model_bytes);
-        bytes[64] = self.z_layer;
+        bytes[64..68].copy_from_slice(&self.z_layer.to_ne_bytes());
         bytes
     }
 }

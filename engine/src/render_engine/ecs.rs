@@ -21,4 +21,6 @@ pub fn insert_renderer_systems_in_schedule(schedule: &mut Schedule) {
         ScheduleStages::Update.to_str(),
         systems::update::update_render_engine,
     );
+
+    schedule.add_system_to_stage(ScheduleStages::Render.to_str(), systems::render::ecs_render);
 }

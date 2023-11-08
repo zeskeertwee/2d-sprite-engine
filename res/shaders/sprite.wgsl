@@ -7,6 +7,7 @@ var<uniform> camera: CameraUniform;
 
 struct PushConstants {
     model: mat4x4<f32>;
+    z: f32;
 };
 
 var<push_constant> push_constant: PushConstants;
@@ -29,8 +30,7 @@ fn vs_main(
     out.tex_coords = model.tex_coords;
     out.clip_position = camera.proj * push_constant.model * vec4<f32>(model.position.xy, 0.0, 1.0);
     // if we don't do this, it ends up outside of the 0-1 range that wgpu requires for something to be drawn
-    //out.clip_position.z = abs(model.position.z) / 10000.0;
-    out.clip_position.z = 0.0;
+    out.clip_position.z = abs(push_constant.z) / 10000.0;
     return out;
 }
 
