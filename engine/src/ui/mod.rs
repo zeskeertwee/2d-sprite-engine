@@ -43,6 +43,7 @@ impl epi::App for DebugUi {
     }
 
     fn update(&mut self, ctx: &CtxRef, _frame: &Frame) {
+        puffin::profile_function!();
         egui::TopBottomPanel::top("top_menu").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.monospace(format!("FPS: {:.2}", 1.0 / self.fps_window.frametime));

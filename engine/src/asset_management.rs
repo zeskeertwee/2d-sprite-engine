@@ -1,4 +1,4 @@
-use crate::scheduler::{Job, JobScheduler};
+use crate::scheduler::{Job, JobFrequency, JobScheduler};
 use crate::texture::GpuTexture;
 use anyhow::{bail, Result};
 use arc_swap::ArcSwap;
@@ -202,8 +202,7 @@ pub struct AssetLoader {
     pub(crate) tex_cache: DashMap<Uuid, Arc<GpuTexture>>,
     pub(crate) tex_placeholder: ArcSwap<Option<Arc<GpuTexture>>>,
     pub(crate) tex_placeholder_uuid: ArcSwap<Option<Uuid>>,
-
-    pub(crate) wasm_script_cache: DashMap<Uuid, Arc<Vec<u8>>>,
+    pub(crate) lua_script_cache: DashMap<Uuid, Arc<Vec<u8>>>,
 }
 
 impl AssetLoader {
@@ -226,7 +225,7 @@ impl AssetLoader {
             tex_cache: DashMap::new(),
             tex_placeholder: ArcSwap::new(Arc::new(None)),
             tex_placeholder_uuid: ArcSwap::new(Arc::new(None)),
-            wasm_script_cache: DashMap::new(),
+            lua_script_cache: DashMap::new(),
         }
     }
 
@@ -448,19 +447,19 @@ impl AssetLoader {
         })
     }
 
-    pub(crate) fn add_compiled_wasm_script(id: &str, data: Vec<u8>) {
+    pub(crate) fn add_compiled_lua_script(id: &str, data: Vec<u8>) {
         Self::with_loader(|loader| {
-            loader.wasm_script_cache.insert(
+            loader.lua_script_cache.insert(
                 Uuid::new_v5(&UUID_NAMESPACE_ASSETS, id.as_bytes()),
                 Arc::new(data),
             );
         });
     }
 
-    pub(crate) fn get_precompiled_wasm_script(id: &str) -> Option<Arc<Vec<u8>>> {
+    pub(crate) fn get_precompiled_lua_script(id: &str) -> Option<Arc<Vec<u8>>> {
         Self::with_loader(|loader| {
             match loader
-                .wasm_script_cache
+                .lua_script_cache
                 .get(&Uuid::new_v5(&UUID_NAMESPACE_ASSETS, id.as_bytes()))
             {
                 Some(x) => Some(Arc::clone(x.value())),
@@ -479,6 +478,10 @@ struct TextureLoadJob {
 impl ToUuid for TextureLoadJob {}
 
 impl Job for TextureLoadJob {
+    fn get_freq(&self) -> JobFrequency {
+        JobFrequency::Once
+    }
+
     fn run(&mut self, device: &Device, queue: &Queue) -> Result<()> {
         let data = AssetLoader::get_asset_uncached(&self.id)?;
         let uuid = Uuid::new_v5(&UUID_NAMESPACE_ASSETS, self.id.as_bytes());

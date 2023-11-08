@@ -1,6 +1,6 @@
 use crate::asset_management::{ToUuid, Uuid};
 use crate::pipelines::RenderPipelineInit;
-use crate::scheduler::Job;
+use crate::scheduler::{Job, JobFrequency};
 use ahash::AHashMap;
 use parking_lot::Mutex;
 use std::sync::Arc;
@@ -15,6 +15,10 @@ pub struct InitPipelineJob {
 impl ToUuid for InitPipelineJob {}
 
 impl Job for InitPipelineJob {
+    fn get_freq(&self) -> JobFrequency {
+        JobFrequency::Once
+    }
+
     fn run(&mut self, device: &Device, _: &Queue) -> anyhow::Result<()> {
         let pipeline = Arc::new(self.pipeline.init(device, self.format)?);
         self.map.lock().insert(self.pipeline.uuid(), pipeline);

@@ -1,5 +1,6 @@
 use crate::render_engine::RenderEngineResources;
 use bevy_ecs::prelude::*;
+use std::ops::Deref;
 use std::sync::Arc;
 
 pub fn update_render_engine(mut engine: ResMut<RenderEngineResources>) {
@@ -7,7 +8,7 @@ pub fn update_render_engine(mut engine: ResMut<RenderEngineResources>) {
     let frametime = engine.total_frame_time().as_secs_f64();
     engine
         .egui_debug_ui
-        .get_mut()
+        .write()
         .fps_window_mut()
         .set_frametime(frametime);
 

@@ -21,7 +21,7 @@ use std::time::Instant;
 
 use crate::asset_management::AssetLoader;
 use crate::render_engine::RenderEngineResources;
-use crate::scripting::WASMEngine;
+use crate::scripting::LuaScript;
 use crate::sprite::Sprite;
 use log::{debug, error, info, trace, warn};
 use winit::{
@@ -83,11 +83,13 @@ fn engine_main() {
     render_engine.insert_sprite(Sprite::new(tex, [-150.0, -100.0, 0.0]));
 
     std::thread::spawn(|| {
-        let compile_job = scripting::WASMPreCompileJob::new("test-script.wasm");
-        let compile_tracker = crate::scheduler::JobScheduler::submit(Box::new(compile_job));
-        compile_tracker.flush().unwrap();
+        std::thread::sleep_ms(2000);
+        //let compile_job = scripting::LuaPreCompileJob::new("test-script.lua");
+        //let compile_tracker = crate::scheduler::JobScheduler::submit(Box::new(compile_job));
+        //compile_tracker.flush().unwrap();
 
-        WASMEngine::run_script("test-script.wasm");
+        let script = LuaScript::new("test-script.lua");
+        script.run();
         return;
     });
 

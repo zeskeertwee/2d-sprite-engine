@@ -15,11 +15,19 @@ use wgpu::{Device, Queue};
 // TODO: Priority levels for jobs?
 
 pub trait Job: Sync + Send + ToUuid {
+    fn get_freq(&self) -> JobFrequency;
     fn run(&mut self, device: &Device, queue: &Queue) -> anyhow::Result<()>;
 }
 
 lazy_static! {
     static ref JOB_SCHEDULER: Mutex<JobScheduler> = Mutex::new(JobScheduler::init());
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum JobFrequency {
+    Frame,
+    Periodically,
+    Once,
 }
 
 #[repr(u8)]
@@ -221,12 +229,16 @@ fn worker_main(
                 let start = Instant::now();
                 match job.run(&device, &queue) {
                     Ok(()) => {
+                        if job.get_freq() != JobFrequency::Frame {
+                            // we don't want to flood the logs with jobs that happen every frame
+                            info!(
+                                "Job {} finished in {:.2} ms",
+                                job.type_name(),
+                                start.elapsed().as_secs_f64() * 1000.0
+                            );
+                        }
+                        drop(job);
                         job_state.store(JobState::Succeeded as u8, Ordering::Relaxed);
-                        info!(
-                            "Job {} finished in {:.2} ms",
-                            job.type_name(),
-                            start.elapsed().as_secs_f64() * 1000.0
-                        );
                     }
                     Err(e) => {
                         job_state.store(JobState::Failed as u8, Ordering::Relaxed);

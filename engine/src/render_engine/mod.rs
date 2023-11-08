@@ -15,7 +15,7 @@ use crate::pipelines::sprite::SpritePushConstant;
 use crate::pipelines::Pipelines;
 use crate::scheduler::JobScheduler;
 use crate::sprite::Sprite;
-use crate::ui::integration::{EguiIntegration, EguiRequestRedrawEvent};
+use crate::ui::integration::{EguiIntegration, EguiRenderJob, EguiRequestRedrawEvent};
 use crate::ui::DebugUi;
 use crate::vertex::Vertex2;
 use log::{info, warn};
@@ -30,7 +30,7 @@ use winit::window::{Window, WindowId};
 const PUSH_CONSTANT_SIZE_LIMIT: u32 = 256;
 
 pub struct RenderEngineResources {
-    window: Window,
+    window: Arc<Window>,
     surface: Surface,
     device: Arc<Device>,
     queue: Arc<Queue>,
@@ -44,8 +44,8 @@ pub struct RenderEngineResources {
     sprite_id_counter: u64,
     last_frametime: Duration,
     idle_time: Duration,
-    egui_integration: Mutex<EguiIntegration>,
-    egui_debug_ui: RwLock<DebugUi>,
+    egui_integration: Arc<Mutex<EguiIntegration>>,
+    egui_debug_ui: Arc<RwLock<DebugUi>>,
 }
 
 impl RenderEngineResources {
@@ -107,7 +107,7 @@ impl RenderEngineResources {
         let egui = EguiIntegration::new(&device, event_loop, &config, window.scale_factor() as f32);
 
         Self {
-            window,
+            window: Arc::new(window),
             surface,
             device,
             queue,
@@ -115,8 +115,8 @@ impl RenderEngineResources {
             size,
             pipelines,
             camera,
-            egui_integration: Mutex::new(egui),
-            egui_debug_ui: RwLock::new(DebugUi::default()),
+            egui_integration: Arc::new(Mutex::new(egui)),
+            egui_debug_ui: Arc::new(RwLock::new(DebugUi::default())),
             sprite_square_vertex_buf: sprite_vertex_buf,
             sprite_square_index_buf: sprite_index_buf,
             sprite_id_counter: 0,
@@ -158,7 +158,7 @@ impl RenderEngineResources {
         self.camera.update_uniform_buffer(&self.queue);
         let frametime = self.total_frame_time().as_secs_f64();
         self.egui_debug_ui
-            .get_mut()
+            .write()
             .fps_window_mut()
             .set_frametime(frametime);
 
@@ -173,7 +173,7 @@ impl RenderEngineResources {
         }
 
         self.egui_debug_ui
-            .get_mut()
+            .write()
             .cache_window_mut()
             .update(&self.device, self.egui_integration.lock().render_pass_mut());
     }
@@ -189,14 +189,35 @@ impl RenderEngineResources {
         let start = Instant::now();
         let view = {
             puffin::profile_scope!("create_output_view");
-            output
-                .texture
-                .create_view(&TextureViewDescriptor::default())
+            Arc::new(
+                output
+                    .texture
+                    .create_view(&TextureViewDescriptor::default()),
+            )
         };
-        let mut encoder = {
-            puffin::profile_scope!("create_encoder");
-            self.device
-                .create_command_encoder(&CommandEncoderDescriptor { label: None })
+
+        let (mut encoder, mut encoder2) = {
+            puffin::profile_scope!("create_encoders");
+            (
+                self.device
+                    .create_command_encoder(&CommandEncoderDescriptor { label: None }),
+                Arc::new(Mutex::new(self.device.create_command_encoder(
+                    &CommandEncoderDescriptor { label: None },
+                ))),
+            )
+        };
+
+        let egui_job_tracker = {
+            puffin::profile_scope!("create_egui_job");
+            let job = EguiRenderJob {
+                encoder: Arc::clone(&encoder2),
+                window: Arc::clone(&self.window),
+                output_view: Arc::clone(&view),
+                surface_config: self.config.clone(),
+                app: Arc::clone(&self.egui_debug_ui),
+                integration: Arc::clone(&self.egui_integration),
+            };
+            JobScheduler::submit(Box::new(job))
         };
 
         let pipeline = {
@@ -261,21 +282,33 @@ impl RenderEngineResources {
                 render_pass.draw_indexed(0..self.sprite_square_index_buf.data_count(), 0, 0..1);
             }
         }
-        drop(render_pass);
 
-        self.egui_integration.lock().render(
-            &self.window,
-            &mut encoder,
-            &self.device,
-            &self.queue,
-            &view,
-            &self.config,
-            self.egui_debug_ui.get_mut(),
-        );
+        {
+            puffin::profile_scope!("end_render_pass");
+            drop(render_pass);
+        }
+
+        //self.egui_integration.lock().render(
+        //    &self.window,
+        //    &mut encoder,
+        //    &self.device,
+        //    &self.queue,
+        //    &view,
+        //    &self.config,
+        //    self.egui_debug_ui.get_mut(),
+        //);
+
+        {
+            puffin::profile_scope!("egui_job_flush");
+            egui_job_tracker.flush().unwrap();
+        }
 
         {
             puffin::profile_scope!("queue_submit_commands");
-            self.queue.submit(std::iter::once(encoder.finish()));
+            self.queue.submit([
+                encoder.finish(),
+                Arc::into_inner(encoder2).unwrap().into_inner().finish(),
+            ]);
             output.present();
         }
 

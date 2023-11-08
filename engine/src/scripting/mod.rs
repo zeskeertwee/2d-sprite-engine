@@ -1,63 +1,46 @@
-use lazy_static::lazy_static;
-use wasmtime::{Config, Engine, Instance, Linker, Module, OptLevel, Store};
-use wasmtime_wasi::sync::WasiCtxBuilder;
-use wasmtime_wasi::WasiCtx;
-
 mod compile_job;
-use crate::AssetLoader;
-pub use compile_job::WASMPreCompileJob;
 
-lazy_static! {
-    static ref WASM_ENGINE: WASMEngine = WASMEngine::new();
+use crate::asset_management::AssetLoader;
+use crate::scheduler::JobScheduler;
+pub use compile_job::LuaPreCompileJob;
+use log::{error, warn};
+use mlua::Lua;
+use std::ops::Deref;
+use std::sync::Arc;
+
+pub struct LuaScript {
+    script_id: String,
+    binary: Arc<Vec<u8>>,
 }
 
-pub struct WASMEngine {
-    engine: Engine,
-}
+impl LuaScript {
+    pub fn new(script_id: &str) -> Self {
+        let binary = match AssetLoader::get_precompiled_lua_script(script_id) {
+            Some(v) => v,
+            None => {
+                warn!("Lua script {} not precompiled!", script_id);
+                let job = JobScheduler::submit(Box::new(LuaPreCompileJob::new(script_id)));
+                match job.flush() {
+                    Ok(_) => (),
+                    Err(e) => panic!("Failed to compile script: {:?}", e),
+                }
 
-impl WASMEngine {
-    pub fn new() -> Self {
-        let engine = Engine::new(&get_engine_config()).expect("Failed to create engine");
+                AssetLoader::get_precompiled_lua_script(script_id).unwrap()
+            }
+        };
 
-        WASMEngine { engine }
+        LuaScript {
+            script_id: script_id.to_string(),
+            binary,
+        }
     }
 
-    pub fn precompile_script(wasm: &[u8]) -> anyhow::Result<Vec<u8>> {
-        WASM_ENGINE.engine.precompile_module(wasm)
+    pub fn run(&self) {
+        let lua = Lua::new();
+        lua.set_compiler(compile_job::get_compiler());
+        lua.sandbox(true).unwrap();
+
+        let chunk = lua.load(self.binary.deref());
+        chunk.exec().unwrap();
     }
-
-    pub fn run_script(script_id: &str) {
-        let binary = AssetLoader::get_precompiled_wasm_script(&script_id)
-            .expect("WASM script to be precompiled");
-        log::info!("Instantiating script...");
-
-        let mut linker = Linker::new(&WASM_ENGINE.engine);
-        wasmtime_wasi::add_to_linker(&mut linker, |s| s).expect("Failed to add WASI to linker");
-
-        let module = unsafe { Module::deserialize(&WASM_ENGINE.engine, &*binary) }
-            .expect("Failed to create module");
-        let wasi = WasiCtxBuilder::new().inherit_stdout().build();
-        let mut store = Store::new(&WASM_ENGINE.engine, wasi);
-        linker
-            .module(&mut store, "", &module)
-            .expect("Failed to link module");
-
-        log::info!("Script instantiated!");
-
-        linker
-            .get_default(&mut store, "")
-            .unwrap()
-            .typed::<(), ()>(&store)
-            .unwrap()
-            .call(&mut store, ())
-            .unwrap();
-    }
-}
-
-fn get_engine_config() -> Config {
-    let mut config = Config::new();
-    config.consume_fuel(false);
-    config.cranelift_opt_level(OptLevel::Speed);
-    config.parallel_compilation(false);
-    config
 }

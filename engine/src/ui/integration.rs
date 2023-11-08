@@ -1,9 +1,13 @@
+use crate::asset_management::ToUuid;
+use crate::scheduler::{Job, JobFrequency};
+use crate::ui::{DebugUi, EguiWindow};
 use egui::FontDefinitions;
 use egui_wgpu_backend;
 use egui_wgpu_backend::ScreenDescriptor;
 use egui_winit_platform;
 use egui_winit_platform::{Platform, PlatformDescriptor};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::{CommandEncoder, Device, Queue, SurfaceConfiguration, TextureView};
@@ -100,9 +104,13 @@ impl EguiIntegration {
 
         app.update(&self.platform.context(), &mut frame);
 
-        let (_output, paint_commands) = self.platform.end_frame(Some(window));
-        let paint_jobs = self.platform.context().tessellate(paint_commands);
-        self.previous_frame_time = Some(render_start.elapsed().as_secs_f64() as f32);
+        let paint_jobs = {
+            puffin::profile_scope!("tessellate");
+            let (_output, paint_commands) = self.platform.end_frame(Some(window));
+            let paint_jobs = self.platform.context().tessellate(paint_commands);
+            self.previous_frame_time = Some(render_start.elapsed().as_secs_f64() as f32);
+            paint_jobs
+        };
 
         let screen_descriptor = ScreenDescriptor {
             physical_width: surface_config.width,
@@ -110,15 +118,22 @@ impl EguiIntegration {
             scale_factor: window.scale_factor() as f32,
         };
 
-        self.render_pass
-            .update_texture(device, queue, &self.platform.context().font_image());
-        self.render_pass.update_user_textures(device, queue);
-        self.render_pass
-            .update_buffers(&device, &queue, &paint_jobs, &screen_descriptor);
+        {
+            puffin::profile_scope!("update_renderpass");
 
-        self.render_pass
-            .execute(encoder, output_view, &paint_jobs, &screen_descriptor, None)
-            .expect("successful egui render pass");
+            self.render_pass
+                .update_texture(device, queue, &self.platform.context().font_image());
+            self.render_pass.update_user_textures(device, queue);
+            self.render_pass
+                .update_buffers(&device, &queue, &paint_jobs, &screen_descriptor);
+        }
+
+        {
+            puffin::profile_scope!("execute_renderpass");
+            self.render_pass
+                .execute(encoder, output_view, &paint_jobs, &screen_descriptor, None)
+                .expect("successful egui render pass");
+        }
     }
 
     pub fn set_scale_factor(&mut self, scale_factor: f32) {
@@ -127,5 +142,36 @@ impl EguiIntegration {
 
     pub fn render_pass_mut(&mut self) -> &mut egui_wgpu_backend::RenderPass {
         &mut self.render_pass
+    }
+}
+
+pub struct EguiRenderJob {
+    pub encoder: Arc<Mutex<CommandEncoder>>,
+    pub window: Arc<Window>,
+    pub output_view: Arc<TextureView>,
+    pub surface_config: SurfaceConfiguration,
+    pub app: Arc<RwLock<DebugUi>>,
+    pub integration: Arc<Mutex<EguiIntegration>>,
+}
+
+impl ToUuid for EguiRenderJob {}
+
+impl Job for EguiRenderJob {
+    fn get_freq(&self) -> JobFrequency {
+        JobFrequency::Frame
+    }
+
+    fn run(&mut self, device: &Device, queue: &Queue) -> anyhow::Result<()> {
+        self.integration.lock().render(
+            &self.window,
+            &mut self.encoder.lock(),
+            device,
+            queue,
+            &self.output_view,
+            &self.surface_config,
+            self.app.write().deref_mut(),
+        );
+
+        Ok(())
     }
 }

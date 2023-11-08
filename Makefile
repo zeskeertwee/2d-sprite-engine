@@ -22,4 +22,4 @@ shader_assets: res/shaders/*.wgsl
 	cd ./res/shaders && $(VACHCLI) pack -k $(KEYFILE) -e -a -o $(SHADER_ASSET_PAK) -i *.wgsl
 
 script_assets: res/assets/*.wasm
-	cd ./res/assets && $(VACHCLI) pack -k $(KEYFILE) -e -a -o $(SCRIPT_ASSET_PAK) -i *.wasm
+	cd ./res/assets && $(VACHCLI) pack -k $(KEYFILE) -e -a -o $(SCRIPT_ASSET_PAK) -i *.lua

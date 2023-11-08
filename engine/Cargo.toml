@@ -32,8 +32,7 @@ epi = "0.16.0"
 dashmap = "5.0.0"
 bevy_ecs = "0.7.0"
 
-wasmtime = "14.0.4"
-wasmtime-wasi = "14.0.4"
+mlua = { version = "0.9.1", features = ["luau", "vendored"] }
 
 puffin = "0.13.0"
 puffin_egui = "0.13.0"
