@@ -5,9 +5,6 @@ use crate::ui::MenuCategory;
 use crate::AssetLoader;
 use ahash::AHashMap;
 use egui::Ui;
-use image::load;
-use std::sync::Arc;
-use std::time::Instant;
 use wgpu::{Device, FilterMode};
 
 pub struct CacheDebugUi {

@@ -3,7 +3,7 @@ mod compile_job;
 use crate::asset_management::AssetLoader;
 use crate::scheduler::JobScheduler;
 pub use compile_job::LuaPreCompileJob;
-use log::{error, warn};
+use log::warn;
 use mlua::Lua;
 use std::ops::Deref;
 use std::sync::Arc;

@@ -1,7 +1,6 @@
 use super::EguiWindow;
 use crate::ui::MenuCategory;
-use egui::{CtxRef, Ui};
-use epi::Frame;
+use egui::Ui;
 use wgpu::PresentMode;
 
 pub struct DebugFrametimeWindow {

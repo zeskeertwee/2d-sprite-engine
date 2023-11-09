@@ -1,13 +1,9 @@
-use crate::asset_management::ToUuid;
-use crate::scheduler::{Job, JobFrequency};
-use crate::ui::{DebugUi, EguiWindow};
 use egui::FontDefinitions;
 use egui_wgpu_backend;
 use egui_wgpu_backend::ScreenDescriptor;
 use egui_winit_platform;
 use egui_winit_platform::{Platform, PlatformDescriptor};
-use parking_lot::{Mutex, RwLock};
-use std::ops::DerefMut;
+use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Instant;
 use wgpu::{CommandEncoder, Device, Queue, SurfaceConfiguration, TextureView};
@@ -23,7 +19,8 @@ struct RepaintSignaller(Mutex<EventLoopProxy<EguiRequestRedrawEvent>>);
 
 impl epi::backend::RepaintSignal for RepaintSignaller {
     fn request_repaint(&self) {
-        self.0
+        let _ = self
+            .0
             .lock()
             .send_event(EguiRequestRedrawEvent::RequestRedraw);
     }
@@ -142,36 +139,5 @@ impl EguiIntegration {
 
     pub fn render_pass_mut(&mut self) -> &mut egui_wgpu_backend::RenderPass {
         &mut self.render_pass
-    }
-}
-
-pub struct EguiRenderJob {
-    pub encoder: Arc<Mutex<CommandEncoder>>,
-    pub window: Arc<Window>,
-    pub output_view: Arc<TextureView>,
-    pub surface_config: SurfaceConfiguration,
-    pub app: Arc<RwLock<DebugUi>>,
-    pub integration: Arc<Mutex<EguiIntegration>>,
-}
-
-impl ToUuid for EguiRenderJob {}
-
-impl Job for EguiRenderJob {
-    fn get_freq(&self) -> JobFrequency {
-        JobFrequency::Frame
-    }
-
-    fn run(&mut self, device: &Device, queue: &Queue) -> anyhow::Result<()> {
-        self.integration.lock().render(
-            &self.window,
-            &mut self.encoder.lock(),
-            device,
-            queue,
-            &self.output_view,
-            &self.surface_config,
-            self.app.write().deref_mut(),
-        );
-
-        Ok(())
     }
 }

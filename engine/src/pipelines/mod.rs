@@ -2,16 +2,12 @@ mod job;
 pub mod sprite;
 
 use crate::asset_management::{ToUuid, Uuid};
-use crate::scheduler::{Job, JobScheduler, JobState};
-use ahash::{AHashMap, AHasher};
+use crate::scheduler::JobScheduler;
+use ahash::AHashMap;
 use lazy_static::lazy_static;
-use log::{info, warn};
 use parking_lot::Mutex;
-use std::any::{type_name, Any};
-use std::hash::Hasher;
 use std::sync::Arc;
 use wgpu::*;
-use winit::event::VirtualKeyCode::Mute;
 
 lazy_static! {
     static ref RENDER_PIPELINES: [&'static dyn RenderPipelineInit; 1] =
@@ -50,13 +46,13 @@ impl Pipelines {
     /// This will panic if the id isn't present in the hashmap
     #[inline(always)]
     pub fn get_render_pipeline(&self, uuid: Uuid) -> Arc<RenderPipeline> {
-        let mut lock = self.render_pipelines.lock();
+        let lock = self.render_pipelines.lock();
         Arc::clone(lock.get(&uuid).expect(&format!("Render pipeline with asset UUID {} isn't initialized yet, or the asset UUID is invalid.", uuid)))
     }
 }
 
-fn hash_type_name<T: Any>() -> u64 {
-    let mut hasher = AHasher::default();
-    hasher.write(type_name::<T>().as_bytes());
-    hasher.finish()
-}
+// fn hash_type_name<T: Any>() -> u64 {
+//     let mut hasher = AHasher::default();
+//     hasher.write(type_name::<T>().as_bytes());
+//     hasher.finish()
+// }

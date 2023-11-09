@@ -2,11 +2,10 @@ use crate::asset_management::ToUuid;
 use anyhow::Result;
 use crossbeam::queue::SegQueue;
 use lazy_static::lazy_static;
-use log::{info, trace, warn};
+use log::{info, warn};
 use parking_lot::{Condvar, Mutex};
-use std::ops::{Deref, DerefMut};
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -195,17 +194,6 @@ impl JobScheduler {
         });
 
         tracker
-    }
-
-    pub fn flush() {
-        loop {
-            let jobs = Self::with_lock(|scheduler| scheduler.job_queue.len());
-            if jobs == 0 {
-                break;
-            }
-
-            thread::sleep(Duration::from_micros(50));
-        }
     }
 
     pub fn thread_states() -> Vec<ThreadState> {

@@ -358,6 +358,7 @@ impl AssetLoader {
     }
 
     pub fn clean_cache() {
+        puffin::profile_function!();
         info!("Starting a cache clean");
         let count = Self::with_loader(|loader| {
             let mut count = 0;
@@ -524,8 +525,24 @@ fn clean_cache_inner<T>(cache: &DashMap<Uuid, Arc<T>>, max_strong_ref: usize) ->
         }
         assert_eq!(Arc::strong_count(&arc), 1);
         cache.remove(uuid);
-        let name = info!("Removed {:?} from cache", uuid);
+        info!("Removed {:?} from cache", uuid);
     }
 
     to_remove.len()
+}
+
+pub struct CacheCleanJob;
+
+impl ToUuid for CacheCleanJob {}
+
+impl Job for CacheCleanJob {
+    fn get_freq(&self) -> JobFrequency {
+        JobFrequency::Periodically
+    }
+
+    fn run(&mut self, _: &Device, _: &Queue) -> Result<()> {
+        AssetLoader::clean_cache();
+
+        Ok(())
+    }
 }

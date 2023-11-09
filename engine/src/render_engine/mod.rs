@@ -1,24 +1,22 @@
-mod ecs;
+pub mod components;
+pub(crate) mod ecs;
+mod resources;
 mod systems;
 
-use super::pipelines;
-use ahash::AHashMap;
+use std::ops::DerefMut;
 use image::ImageFormat;
-use std::cell::RefCell;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use crate::asset_management::{AssetLoader, ToUuid};
+use crate::asset_management::AssetLoader;
 use crate::buffer::{GpuIndexBuffer, GpuVertexBuffer};
 use crate::camera::Camera;
-use crate::pipelines::sprite::SpritePushConstant;
 use crate::pipelines::Pipelines;
 use crate::scheduler::JobScheduler;
-use crate::sprite::Sprite;
-use crate::ui::integration::{EguiIntegration, EguiRenderJob, EguiRequestRedrawEvent};
+use crate::ui::integration::{EguiIntegration, EguiRequestRedrawEvent};
 use crate::ui::DebugUi;
 use crate::vertex::Vertex2;
-use log::{info, warn};
+use log::warn;
 use parking_lot::{Mutex, RwLock};
 use pollster::block_on;
 use wgpu::*;
@@ -40,8 +38,6 @@ pub struct RenderEngineResources {
     camera: Camera,
     sprite_square_vertex_buf: GpuVertexBuffer<Vertex2>,
     sprite_square_index_buf: GpuIndexBuffer<u16>,
-    sprites: AHashMap<u64, Sprite>,
-    sprite_id_counter: u64,
     last_frametime: Duration,
     idle_time: Duration,
     egui_integration: Arc<Mutex<EguiIntegration>>,
@@ -119,8 +115,6 @@ impl RenderEngineResources {
             egui_debug_ui: Arc::new(RwLock::new(DebugUi::default())),
             sprite_square_vertex_buf: sprite_vertex_buf,
             sprite_square_index_buf: sprite_index_buf,
-            sprite_id_counter: 0,
-            sprites: AHashMap::new(),
             last_frametime: Duration::new(0, 0),
             idle_time: Duration::new(0, 0),
         }
@@ -153,168 +147,6 @@ impl RenderEngineResources {
         self.surface.configure(&self.device, &self.config);
     }
 
-    pub fn update(&mut self) {
-        puffin::profile_function!();
-        self.camera.update_uniform_buffer(&self.queue);
-        let frametime = self.total_frame_time().as_secs_f64();
-        self.egui_debug_ui
-            .write()
-            .fps_window_mut()
-            .set_frametime(frametime);
-
-        if self.config.present_mode != self.egui_debug_ui.read().fps_window().present_mode() {
-            info!(
-                "Updating present mode from {:?} to {:?} (reason: DebugUi)",
-                self.config.present_mode,
-                self.egui_debug_ui.read().fps_window().present_mode()
-            );
-            self.config.present_mode = self.egui_debug_ui.read().fps_window().present_mode();
-            self.reconfigure_surface();
-        }
-
-        self.egui_debug_ui
-            .write()
-            .cache_window_mut()
-            .update(&self.device, self.egui_integration.lock().render_pass_mut());
-    }
-
-    pub fn render(&mut self) -> Result<(), SurfaceError> {
-        puffin::profile_function!();
-        let idle_start = Instant::now();
-        let output = {
-            puffin::profile_scope!("get_surface_texture");
-            self.surface.get_current_texture()?
-        };
-        self.idle_time = idle_start.elapsed();
-        let start = Instant::now();
-        let view = {
-            puffin::profile_scope!("create_output_view");
-            Arc::new(
-                output
-                    .texture
-                    .create_view(&TextureViewDescriptor::default()),
-            )
-        };
-
-        let (mut encoder, mut encoder2) = {
-            puffin::profile_scope!("create_encoders");
-            (
-                self.device
-                    .create_command_encoder(&CommandEncoderDescriptor { label: None }),
-                Arc::new(Mutex::new(self.device.create_command_encoder(
-                    &CommandEncoderDescriptor { label: None },
-                ))),
-            )
-        };
-
-        let egui_job_tracker = {
-            puffin::profile_scope!("create_egui_job");
-            let job = EguiRenderJob {
-                encoder: Arc::clone(&encoder2),
-                window: Arc::clone(&self.window),
-                output_view: Arc::clone(&view),
-                surface_config: self.config.clone(),
-                app: Arc::clone(&self.egui_debug_ui),
-                integration: Arc::clone(&self.egui_integration),
-            };
-            JobScheduler::submit(Box::new(job))
-        };
-
-        let pipeline = {
-            puffin::profile_scope!("get_render_pipeline");
-            self.pipelines
-                .get_render_pipeline(pipelines::sprite::SpriteRenderPipeline.uuid())
-        };
-
-        //let tex = self.sprites.get(&0).unwrap().texture.load();
-
-        let mut render_pass = {
-            puffin::profile_scope!("begin_render_pass");
-            let mut rp = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: None,
-                color_attachments: &[RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color {
-                            r: 0.1,
-                            g: 0.2,
-                            b: 0.3,
-                            a: 1.0,
-                        }),
-                        store: true,
-                    },
-                }],
-                depth_stencil_attachment: None,
-            });
-
-            rp.set_pipeline(&pipeline);
-            rp.set_vertex_buffer(0, self.sprite_square_vertex_buf.slice(..));
-            rp.set_index_buffer(
-                self.sprite_square_index_buf.slice(..),
-                self.sprite_square_index_buf.index_format(),
-            );
-            rp.set_bind_group(0, &self.camera.bind_group(), &[]);
-            rp
-        };
-
-        {
-            puffin::profile_scope!("draw_sprites");
-            for (_, sprite) in self.sprites.iter() {
-                let uniform = SpritePushConstant::new(sprite.model_matrix(), sprite.position.z);
-
-                //let model_mat = sprite.model_matrix();
-                //let model: [u8; 64] =
-                //    unsafe { std::mem::transmute(model_mat * cgmath::Matrix4::from_scale(200.0)) };
-                //render_pass.set_push_constants(ShaderStages::VERTEX, 0, &model);
-                //render_pass.set_push_constants(
-                //    ShaderStages::VERTEX,
-                //    std::mem::size_of_val(&model) as u32,
-                //    &[sprite.position.z as u8, 0, 0, 0],
-                //);
-                render_pass.set_push_constants(ShaderStages::VERTEX, 0, &uniform.as_bytes());
-                render_pass.set_bind_group(
-                    1,
-                    unsafe { sprite.texture.load().static_bind_group() },
-                    &[],
-                );
-                render_pass.draw_indexed(0..self.sprite_square_index_buf.data_count(), 0, 0..1);
-            }
-        }
-
-        {
-            puffin::profile_scope!("end_render_pass");
-            drop(render_pass);
-        }
-
-        //self.egui_integration.lock().render(
-        //    &self.window,
-        //    &mut encoder,
-        //    &self.device,
-        //    &self.queue,
-        //    &view,
-        //    &self.config,
-        //    self.egui_debug_ui.get_mut(),
-        //);
-
-        {
-            puffin::profile_scope!("egui_job_flush");
-            egui_job_tracker.flush().unwrap();
-        }
-
-        {
-            puffin::profile_scope!("queue_submit_commands");
-            self.queue.submit([
-                encoder.finish(),
-                Arc::into_inner(encoder2).unwrap().into_inner().finish(),
-            ]);
-            output.present();
-        }
-
-        self.last_frametime = start.elapsed();
-        Ok(())
-    }
-
     pub fn frametime(&self) -> &Duration {
         &self.last_frametime
     }
@@ -332,16 +164,9 @@ impl RenderEngineResources {
         let total_time = self.idle_time.as_secs_f64() + self.last_frametime.as_secs_f64();
         self.last_frametime.as_secs_f64() / total_time
     }
-
-    pub fn insert_sprite(&mut self, sprite: Sprite) -> u64 {
-        let id = self.sprite_id_counter;
-        self.sprite_id_counter += 1;
-        self.sprites.insert(id, sprite);
-        id
-    }
-
-    pub fn get_sprite_mut(&mut self, id: u64) -> Option<&mut Sprite> {
-        self.sprites.get_mut(&id)
+    
+    pub fn with_debug_ui<F: FnOnce(&mut DebugUi) -> R, R>(&self, f: F) -> R {
+        (f)(self.egui_debug_ui.write().deref_mut())
     }
 
     pub fn camera(&self) -> &Camera {

@@ -2,17 +2,15 @@ use crate::ui::cache::CacheDebugUi;
 use crate::ui::fps::DebugFrametimeWindow;
 use crate::ui::profiler::PuffinProfilerWindow;
 use crate::ui::scheduler::SchedulerWorkerThreadWindow;
-use ahash::AHashMap;
-use egui::{CtxRef, Ui, Vec2};
+use egui::{CtxRef, Ui};
 use epi::Frame;
-use std::collections::HashMap;
-use wgpu::PresentMode;
 
 mod cache;
 mod fps;
 pub mod integration;
 mod profiler;
 mod scheduler;
+pub mod update_debug_ui_system;
 
 trait EguiWindow {
     fn title(&self) -> &'static str;
