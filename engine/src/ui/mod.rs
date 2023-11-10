@@ -44,7 +44,10 @@ impl epi::App for DebugUi {
         puffin::profile_function!();
         egui::TopBottomPanel::top("top_menu").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.monospace(format!("FPS: {:.2}", 1.0 / self.fps_window.frametime));
+                ui.monospace(format!(
+                    "FPS: {:.2}",
+                    1.0 / self.fps_window.get_avg_frametime()
+                ));
                 ui.add_space(10.0);
 
                 ui.menu_button("Debug", |ui| {

@@ -1,11 +1,15 @@
 use super::EguiWindow;
 use crate::ui::MenuCategory;
 use egui::Ui;
+use std::collections::VecDeque;
 use wgpu::PresentMode;
+
+const MAX_FRAMETIME_SAMPLES: usize = 60;
 
 pub struct DebugFrametimeWindow {
     /// the frametime, in seconds
-    pub(super) frametime: f64,
+    avg_frametime: f64,
+    frametimes: VecDeque<f64>,
     present_mode: PresentMode,
 }
 
@@ -21,7 +25,7 @@ impl EguiWindow for DebugFrametimeWindow {
     fn draw(&mut self, ui: &mut Ui) {
         ui.label(format!(
             "Frametime: {:.2}ms {}",
-            self.frametime * 1000.0,
+            self.avg_frametime * 1000.0,
             if self.present_mode == PresentMode::Mailbox {
                 "POSSIBLY INACCURATE"
             } else {
@@ -31,7 +35,7 @@ impl EguiWindow for DebugFrametimeWindow {
         ui.add_space(15.0);
         ui.label(format!(
             "FPS: {:.2} {}",
-            1.0 / self.frametime,
+            1.0 / self.avg_frametime,
             if self.present_mode == PresentMode::Mailbox {
                 "POSSIBLY INACCURATE"
             } else {
@@ -53,7 +57,8 @@ impl EguiWindow for DebugFrametimeWindow {
 impl Default for DebugFrametimeWindow {
     fn default() -> Self {
         Self {
-            frametime: 0.0,
+            avg_frametime: 0.0,
+            frametimes: VecDeque::new(),
             present_mode: PresentMode::Fifo,
         }
     }
@@ -61,7 +66,16 @@ impl Default for DebugFrametimeWindow {
 
 impl DebugFrametimeWindow {
     pub fn set_frametime(&mut self, frametime: f64) {
-        self.frametime = frametime;
+        self.frametimes.push_back(frametime);
+        if self.frametimes.len() > MAX_FRAMETIME_SAMPLES {
+            self.frametimes.pop_front();
+        }
+
+        self.avg_frametime = self.frametimes.iter().sum::<f64>() / self.frametimes.len() as f64;
+    }
+
+    pub fn get_avg_frametime(&self) -> f64 {
+        self.avg_frametime
     }
 
     pub fn present_mode(&self) -> PresentMode {

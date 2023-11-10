@@ -1,10 +1,11 @@
 use crate::asset_management::CacheCleanJob;
 use crate::scheduler::JobScheduler;
-use bevy_ecs::system::{Res, ResMut};
-use log::trace;
+use bevy_ecs::system::{Res, ResMut, Resource};
 use std::time::{Duration, Instant};
 
+#[derive(Resource)]
 pub struct LastCacheClean(pub Instant);
+#[derive(Resource)]
 pub struct CacheCleanInterval(pub Duration);
 
 impl Default for LastCacheClean {

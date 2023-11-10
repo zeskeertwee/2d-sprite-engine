@@ -1,4 +1,4 @@
-use crate::render_engine::resources::FrameResources;
+use crate::render_engine::resources::{CommandBufferCollector, FrameResources};
 use crate::render_engine::RenderEngineResources;
 use bevy_ecs::system::Res;
 use parking_lot::Mutex;
@@ -7,14 +7,14 @@ use wgpu::{CommandBuffer, CommandEncoderDescriptor};
 
 pub fn ecs_render_egui_ui(
     engine: Res<RenderEngineResources>,
-    frame: Res<Option<FrameResources>>,
-    encoder_submit: Res<Mutex<Vec<CommandBuffer>>>,
+    frame: Res<FrameResources>,
+    command_collector: Res<CommandBufferCollector>,
 ) {
     puffin::profile_function!();
-    let frame = match frame.deref() {
-        Some(f) => f,
-        None => panic!("FrameResources not initialized!"),
-    };
+    //let frame = match frame.deref() {
+    //    Some(f) => f,
+    //    None => panic!("FrameResources not initialized!"),
+    //};
 
     let mut encoder = engine
         .device
@@ -32,5 +32,5 @@ pub fn ecs_render_egui_ui(
         engine.egui_debug_ui.write().deref_mut(),
     );
 
-    encoder_submit.lock().push(encoder.finish());
+    command_collector.push(encoder);
 }

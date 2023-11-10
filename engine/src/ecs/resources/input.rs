@@ -1,7 +1,9 @@
+use bevy_ecs::system::Resource;
 use cgmath::Vector2;
 use std::collections::HashSet;
 use winit::event::VirtualKeyCode;
 
+#[derive(Resource)]
 pub struct CursorPosition {
     pub screen_space: Vector2<f32>,
     pub world_space: Vector2<f32>,
@@ -16,6 +18,7 @@ impl Default for CursorPosition {
     }
 }
 
+#[derive(Resource)]
 pub struct KeyboardInput {
     pressed: HashSet<VirtualKeyCode>,
 }

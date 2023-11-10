@@ -1,6 +1,8 @@
+use bevy_ecs::system::Resource;
 use std::ops::Deref;
 use std::time::{Duration, Instant};
 
+#[derive(Resource)]
 pub struct DeltaTime(pub Duration);
 
 impl Deref for DeltaTime {
@@ -17,6 +19,7 @@ impl Default for DeltaTime {
     }
 }
 
+#[derive(Resource)]
 pub(crate) struct LastDeltaTimeInstant(pub Instant);
 
 impl Default for LastDeltaTimeInstant {

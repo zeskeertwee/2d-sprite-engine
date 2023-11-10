@@ -3,7 +3,7 @@ use crate::pipelines;
 use crate::pipelines::sprite::SpritePushConstant;
 use crate::render_engine::components::position::Position;
 use crate::render_engine::components::texture::Texture;
-use crate::render_engine::resources::FrameResources;
+use crate::render_engine::resources::{CommandBufferCollector, FrameResources};
 use crate::render_engine::RenderEngineResources;
 use bevy_ecs::prelude::*;
 use parking_lot::Mutex;
@@ -15,16 +15,16 @@ use wgpu::{
 
 pub fn ecs_render_sprites(
     engine: Res<RenderEngineResources>,
-    frame: Res<Option<FrameResources>>,
-    encoder_submit: Res<Mutex<Vec<CommandBuffer>>>,
-    sprites: Query<(Entity, &Position, &Texture)>,
+    frame: Res<FrameResources>,
+    command_collector: Res<CommandBufferCollector>,
+    sprites: Query<(&Position, &Texture)>,
 ) {
     puffin::profile_function!();
 
-    let frame = match frame.deref() {
-        Some(f) => f,
-        None => panic!("FrameResources not initialized!"),
-    };
+    //let frame = match frame.deref() {
+    //    Some(f) => f,
+    //    None => panic!("FrameResources not initialized!"),
+    //};
 
     let mut encoder = engine
         .device
@@ -49,12 +49,7 @@ pub fn ecs_render_sprites(
                 view: &frame.view,
                 resolve_target: None,
                 ops: Operations {
-                    load: LoadOp::Clear(Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 1.0,
-                    }),
+                    load: LoadOp::Load,
                     store: true,
                 },
             }],
@@ -73,7 +68,7 @@ pub fn ecs_render_sprites(
 
     {
         puffin::profile_scope!("draw_sprites");
-        for (_, pos, tex) in sprites.iter() {
+        for (pos, tex) in sprites.iter() {
             let uniform =
                 SpritePushConstant::new(crate::sprite::compute_model_matrix(pos.0), pos.0.z);
 
@@ -97,5 +92,5 @@ pub fn ecs_render_sprites(
         drop(render_pass);
     }
 
-    encoder_submit.lock().push(encoder.finish());
+    command_collector.push(encoder);
 }

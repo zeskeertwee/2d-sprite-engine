@@ -1,4 +1,6 @@
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
+use bevy_ecs::prelude::SystemSet;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, SystemSet)]
 pub enum ScheduleStages {
     PreUpdate,
     Update,

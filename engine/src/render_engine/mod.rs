@@ -1,24 +1,29 @@
+pub mod buffer;
+pub mod camera;
 pub mod components;
 pub(crate) mod ecs;
 mod resources;
 mod systems;
+pub mod texture;
+pub mod vertex;
 
-use std::ops::DerefMut;
+use bevy_ecs::system::Resource;
 use image::ImageFormat;
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::asset_management::AssetLoader;
-use crate::buffer::{GpuIndexBuffer, GpuVertexBuffer};
-use crate::camera::Camera;
 use crate::pipelines::Pipelines;
 use crate::scheduler::JobScheduler;
 use crate::ui::integration::{EguiIntegration, EguiRequestRedrawEvent};
 use crate::ui::DebugUi;
-use crate::vertex::Vertex2;
+use buffer::{GpuIndexBuffer, GpuVertexBuffer};
+use camera::Camera;
 use log::warn;
 use parking_lot::{Mutex, RwLock};
 use pollster::block_on;
+use vertex::Vertex2;
 use wgpu::*;
 use winit::dpi::PhysicalSize;
 use winit::event::Event;
@@ -27,6 +32,7 @@ use winit::window::{Window, WindowId};
 
 const PUSH_CONSTANT_SIZE_LIMIT: u32 = 256;
 
+#[derive(Resource)]
 pub struct RenderEngineResources {
     window: Arc<Window>,
     surface: Surface,
@@ -38,7 +44,6 @@ pub struct RenderEngineResources {
     camera: Camera,
     sprite_square_vertex_buf: GpuVertexBuffer<Vertex2>,
     sprite_square_index_buf: GpuIndexBuffer<u16>,
-    last_frametime: Duration,
     idle_time: Duration,
     egui_integration: Arc<Mutex<EguiIntegration>>,
     egui_debug_ui: Arc<RwLock<DebugUi>>,
@@ -95,8 +100,7 @@ impl RenderEngineResources {
 
         let pipelines = Pipelines::new(config.format);
 
-        let sprite_vertex_buf =
-            GpuVertexBuffer::new(&device, &crate::vertex::SQUARE, Some("Square VB"));
+        let sprite_vertex_buf = GpuVertexBuffer::new(&device, &vertex::SQUARE, Some("Square VB"));
         let sprite_index_buf = GpuIndexBuffer::new(&device, &[0, 1, 2, 0, 2, 3], Some("Square IB"));
         let camera = Camera::new(&device, size.height as f32, size.width as f32);
 
@@ -115,7 +119,6 @@ impl RenderEngineResources {
             egui_debug_ui: Arc::new(RwLock::new(DebugUi::default())),
             sprite_square_vertex_buf: sprite_vertex_buf,
             sprite_square_index_buf: sprite_index_buf,
-            last_frametime: Duration::new(0, 0),
             idle_time: Duration::new(0, 0),
         }
     }
@@ -147,24 +150,6 @@ impl RenderEngineResources {
         self.surface.configure(&self.device, &self.config);
     }
 
-    pub fn frametime(&self) -> &Duration {
-        &self.last_frametime
-    }
-
-    pub fn idle_time(&self) -> &Duration {
-        &self.idle_time
-    }
-
-    pub fn total_frame_time(&self) -> Duration {
-        self.idle_time + self.last_frametime
-    }
-
-    /// 1.0 means the gpu is spending no time idle, while 0.0 means the gpu is not spending any time rendering
-    pub fn gpu_busy_ratio(&self) -> f64 {
-        let total_time = self.idle_time.as_secs_f64() + self.last_frametime.as_secs_f64();
-        self.last_frametime.as_secs_f64() / total_time
-    }
-    
     pub fn with_debug_ui<F: FnOnce(&mut DebugUi) -> R, R>(&self, f: F) -> R {
         (f)(self.egui_debug_ui.write().deref_mut())
     }

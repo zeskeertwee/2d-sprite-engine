@@ -1,28 +1,23 @@
 #![feature(type_alias_impl_trait)]
 
 mod asset_management;
-mod buffer;
-mod camera;
+mod demo_sys;
 mod ecs;
 mod pipelines;
 mod render_engine;
 mod scheduler;
 mod scripting;
 mod sprite;
-mod texture;
 mod ui;
-mod vertex;
-
-use cgmath::{Vector2, Vector3};
-use dialog::DialogBox;
-use std::panic::catch_unwind;
-use std::time::Instant;
 
 use crate::asset_management::AssetLoader;
 use crate::ecs::EcsWorld;
 use crate::render_engine::components::{position::Position, texture::Texture};
 use crate::scripting::LuaScript;
+use cgmath::{Vector2, Vector3};
+use dialog::DialogBox;
 use log::{error, trace};
+use std::panic::catch_unwind;
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -76,26 +71,36 @@ fn engine_main() {
     let mut world = EcsWorld::new();
     render_engine::ecs::init_renderer_resources_in_world(&mut world, window, &event_loop);
     render_engine::ecs::insert_renderer_systems_in_schedule(&mut world);
-    let mut last_cache_clean = Instant::now();
+    demo_sys::initialize_in_world(&mut world);
 
     let tex = AssetLoader::load_texture("tux-32.png").unwrap();
-    let sprite_id = world.insert_entity(|mut e| {
+
+    for i in 0..8 {
+        let angle = (i as f32 / 8.0) * 360.0;
+        let offset = Vector2::new(angle.cos(), angle.sin()) * 150.0;
+        world.insert_entity(|mut e| {
+            e.insert(Position([5.0, 5.0, 0.0].into()));
+            e.insert(Texture(tex.clone()));
+            e.insert(demo_sys::MoveWithCursor { offset });
+            e.id()
+        });
+    }
+
+    let script = LuaScript::new("test-script.lua");
+
+    world.insert_entity(|mut e| {
         e.insert(Position([5.0, 5.0, 1.0].into()));
         e.insert(Texture(tex.clone()));
+        e.insert(demo_sys::MoveWithCursor {
+            offset: Vector2::new(0.0, 0.0),
+        });
         e.id()
     });
-    let sprite2_id = world.insert_entity(|mut e| {
-        e.insert(Position([-150.0, -100.0, 0.0].into()));
+    world.insert_entity(|mut e| {
+        e.insert(Position([-150.0, -100.0, 1.0].into()));
         e.insert(Texture(tex.clone()));
+        e.insert(script);
         e.id()
-    });
-
-    std::thread::spawn(|| {
-        std::thread::sleep_ms(2000);
-
-        let script = LuaScript::new("test-script.lua");
-        script.run();
-        return;
     });
 
     let wid = world.get_render_engine(|e| e.window_id());
@@ -135,16 +140,6 @@ fn engine_main() {
                 WindowEvent::CursorMoved { position, .. } => {
                     world
                         .update_cursor_position(Vector2::new(position.x as f32, position.y as f32));
-                    let new_pos = world.get_render_engine(|e| {
-                        e.camera().mouse_pos_to_world_space(Vector2::new(
-                            position.x as f32,
-                            position.y as f32,
-                        ))
-                    });
-                    world.get_entity_mut(sprite_id, |mut e| {
-                        let mut pos = e.get_mut::<Position>().unwrap();
-                        pos.0 = Vector3::new(new_pos.x, new_pos.y, 0.0);
-                    });
                 }
                 _ => (),
             },

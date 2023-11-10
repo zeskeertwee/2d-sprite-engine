@@ -1,4 +1,4 @@
-use crate::buffer::{GpuUniformBuffer, Uniform};
+use super::buffer::{GpuUniformBuffer, Uniform};
 use cgmath::{Matrix4, SquareMatrix, Vector2, Vector4};
 use std::ops::Deref;
 use wgpu::{

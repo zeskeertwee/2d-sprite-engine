@@ -27,7 +27,7 @@ pub const SQUARE: [Vertex2; 4] = [
     },
 ];
 
-impl crate::buffer::GpuVertexBufferLayout for Vertex2 {
+impl super::buffer::GpuVertexBufferLayout for Vertex2 {
     fn layout() -> VertexBufferLayout<'static> {
         VertexBufferLayout {
             array_stride: std::mem::size_of::<Vertex2>() as BufferAddress,

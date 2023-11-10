@@ -266,9 +266,6 @@ fn worker_main(
                     info!("JobWorker terminating");
                     return;
                 }
-                // don't burn the CPU time, but respond quickly to new jobs
-                // TODO: optimize this? (wake a single thread with barriers when we get a job?)
-                thread::sleep(Duration::from_micros(50));
             }
         }
     }

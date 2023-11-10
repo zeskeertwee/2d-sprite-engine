@@ -1,8 +1,8 @@
 use crate::asset_management::{AssetLoader, ToUuid};
-use crate::buffer::{GpuUniformBuffer, GpuVertexBufferLayout};
-use crate::camera::CameraUniform;
-use crate::texture::GpuTexture;
-use crate::vertex::Vertex2;
+use crate::render_engine::buffer::{GpuUniformBuffer, GpuVertexBufferLayout};
+use crate::render_engine::camera::CameraUniform;
+use crate::render_engine::texture::GpuTexture;
+use crate::render_engine::vertex::Vertex2;
 use cgmath::Matrix4;
 use wgpu::*;
 

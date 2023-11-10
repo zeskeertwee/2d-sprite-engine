@@ -1,10 +1,11 @@
 pub mod resources;
 mod stage;
-mod systems;
+pub mod systems;
 
 use crate::ecs::resources::KeyboardInput;
 use crate::render_engine::RenderEngineResources;
 use bevy_ecs::prelude::*;
+use bevy_ecs::schedule::ExecutorKind;
 use bevy_ecs::world::EntityMut;
 use cgmath::Vector2;
 use log::warn;
@@ -14,34 +15,16 @@ use winit::event::ElementState;
 pub struct EcsWorld {
     pub world: World,
     pub schedule: Schedule,
+    pub render_schedule: Schedule,
 }
 
 impl EcsWorld {
     pub fn new() -> Self {
         let mut world = World::default();
         let mut schedule = Schedule::default();
-
-        // initialize stages
-        for stage in stage::STAGES {
-            schedule.add_stage(stage.to_str(), SystemStage::parallel());
-        }
-        //schedule.add_stage(ScheduleStages::PreUpdate.to_str(), SystemStage::parallel());
-        //schedule.add_stage(ScheduleStages::Update.to_str(), SystemStage::parallel());
-        //schedule.add_stage(ScheduleStages::PostUpdate.to_str(), SystemStage::parallel());
-        //schedule.add_stage(ScheduleStages::PreRender.to_str(), SystemStage::parallel());
-        //schedule.add_stage(
-        //    ScheduleStages::InternalPreRender.to_str(),
-        //    SystemStage::parallel(),
-        //);
-        //schedule.add_stage(
-        //    ScheduleStages::InternalRender.to_str(),
-        //    SystemStage::parallel(),
-        //);
-        //schedule.add_stage(
-        //    ScheduleStages::InternalPostRender.to_str(),
-        //    SystemStage::parallel(),
-        //);
-        //schedule.add_stage(ScheduleStages::PostRender.to_str(), SystemStage::parallel());
+        schedule.set_executor_kind(ExecutorKind::MultiThreaded);
+        let mut render_schedule = Schedule::default();
+        render_schedule.set_executor_kind(ExecutorKind::MultiThreaded);
 
         // initialize resources
         world.insert_resource(systems::clean_cache::LastCacheClean::default());
@@ -52,38 +35,38 @@ impl EcsWorld {
         world.insert_resource(resources::delta_time::LastDeltaTimeInstant::default());
 
         // initialize systems
-        schedule.add_system_to_stage(
-            ScheduleStages::PreUpdate.to_str(),
+        schedule.add_systems((
             systems::delta_time::update_delta_time,
-        );
-
-        schedule.add_system_to_stage(
-            ScheduleStages::Update.to_str(),
-            crate::ui::update_debug_ui_system::update_debug_ui_frametime,
-        );
-        schedule.add_system_to_stage(
-            ScheduleStages::Update.to_str(),
+            crate::ui::update_debug_ui_system::update_debug_ui_frametime
+                .after(systems::delta_time::update_delta_time),
+            // we don't care when this runs
             systems::clean_cache::clean_cache,
-        );
+        ));
 
-        Self { world, schedule }
+        let mut world = Self {
+            world,
+            schedule,
+            render_schedule,
+        };
+
+        crate::scripting::systems::initialize_systems_in_world(&mut world);
+
+        world
     }
 
     pub fn run_schedule(&mut self) {
         puffin::profile_function!();
-        for (idx, stage) in stage::STAGES.iter().enumerate() {
-            puffin::profile_scope!(stage::PROFILER_STAGE_NAMES[idx]);
-            let stage: &mut SystemStage = self.schedule.get_stage_mut(&stage.to_str()).unwrap();
-            stage.run(&mut self.world);
-        }
+        self.schedule.run(&mut self.world);
+        self.schedule.apply_deferred(&mut self.world);
+        self.render_schedule.run(&mut self.world);
     }
 
-    pub fn insert_entity<F: FnOnce(EntityMut) -> R, R>(&mut self, f: F) -> R {
-        let entity = self.world.spawn();
+    pub fn insert_entity<F: FnOnce(EntityWorldMut) -> R, R>(&mut self, f: F) -> R {
+        let entity = self.world.spawn_empty();
         (f)(entity)
     }
 
-    pub fn get_entity_mut<F: FnOnce(EntityMut) -> R, R>(&mut self, entity: Entity, f: F) -> R {
+    pub fn get_entity_mut<F: FnOnce(EntityWorldMut) -> R, R>(&mut self, entity: Entity, f: F) -> R {
         (f)(self.world.get_entity_mut(entity).unwrap())
     }
 

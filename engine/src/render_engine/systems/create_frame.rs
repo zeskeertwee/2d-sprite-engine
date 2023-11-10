@@ -1,13 +1,13 @@
 use crate::render_engine::resources::FrameResources;
 use crate::render_engine::RenderEngineResources;
-use bevy_ecs::system::{Res, ResMut};
+use bevy_ecs::system::{Commands, Res, ResMut};
 use log::{error, info};
 use wgpu::{SurfaceError, TextureViewDescriptor};
 
 pub fn ecs_render_create_frame_resource(
-    //mut commands: Commands,
+    mut commands: Commands,
     engine: Res<RenderEngineResources>,
-    mut frame: ResMut<Option<FrameResources>>,
+    //mut frame: ResMut<Option<FrameResources>>,
 ) {
     puffin::profile_function!();
     let output = {
@@ -37,6 +37,9 @@ pub fn ecs_render_create_frame_resource(
             .create_view(&TextureViewDescriptor::default())
     };
 
-    *frame = Some(FrameResources { output, view });
-    //commands.insert_resource(FrameResources { output, view });
+    //*frame = Some(FrameResources { output, view });
+    commands.insert_resource(FrameResources {
+        output: Some(output),
+        view,
+    });
 }

@@ -1,14 +1,23 @@
-use crate::scheduler::{Job, JobFrequency, JobScheduler};
-use crate::texture::GpuTexture;
+mod cache_clean_job;
+mod gpu_texture_ref;
+mod texture_load_job;
+mod uuid;
+
+pub use cache_clean_job::CacheCleanJob;
+pub use gpu_texture_ref::GpuTextureRef;
+use texture_load_job::TextureLoadJob;
+pub use uuid::{ToUuid, Uuid};
+
+use crate::render_engine::texture::GpuTexture;
+use crate::scheduler::JobScheduler;
 use anyhow::{bail, Result};
 use arc_swap::ArcSwap;
 use dashmap::DashMap;
 use image::ImageFormat;
 use lazy_static::lazy_static;
-use log::{info, trace, warn};
+use log::{info, warn};
 use parking_lot::Mutex;
-use std::any::type_name;
-use std::fmt::{Debug, Display, Formatter};
+use std::fmt::Display;
 use std::fs::File;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
@@ -22,179 +31,15 @@ const NAMESPACE_ASSETS: [u8; 16] = [
     0x6b, 0xa7, 0xb8, 0x15, 0x9d, 0xad, 0x11, 0xd1, 0x80, 0xb4, 0x00, 0xc0, 0x4f, 0xd4, 0x30, 0xc8,
 ];
 pub const UUID_NAMESPACE_ASSETS: Uuid = Uuid::from_bytes(NAMESPACE_ASSETS);
-const PUB_KEY: &[u8] = include_bytes!("../../res/keys/key.pub");
+const PUB_KEY: &[u8] = include_bytes!("../../../res/keys/key.pub");
 pub static KEEP_ASSET_NAMES: AtomicBool = AtomicBool::new(false);
-
-#[derive(Hash, Eq, PartialEq, Copy, Clone)]
-pub struct Uuid {
-    inner: uuid::Uuid,
-}
-
-impl Deref for Uuid {
-    type Target = uuid::Uuid;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl Display for Uuid {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if KEEP_ASSET_NAMES.load(Ordering::Relaxed) {
-            f.write_str(
-                // TODO: prevent deadlocks
-                AssetLoader::with_loader(|loader| match &loader.name_cache {
-                    Some(x) => match x.get(&self.inner) {
-                        Some(x) => x.to_string(),
-                        None => self.inner.to_string(),
-                    },
-                    None => panic!("Expedted an initialized name cache"),
-                })
-                .as_str(),
-            )
-        } else {
-            f.write_str(&self.inner.to_string())
-        }
-    }
-}
-
-impl Debug for Uuid {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.inner.to_string())
-    }
-}
-
-impl Uuid {
-    pub fn new_v5(namespace: &Uuid, name: &[u8]) -> Self {
-        Self {
-            inner: uuid::Uuid::new_v5(namespace, name),
-        }
-    }
-
-    pub const fn from_bytes(bytes: [u8; 16]) -> Self {
-        Self {
-            inner: uuid::Uuid::from_bytes(bytes),
-        }
-    }
-}
-
-pub trait ToUuid {
-    fn uuid(&self) -> Uuid {
-        Uuid::new_v5(&UUID_NAMESPACE_ASSETS, self.type_name().as_bytes())
-    }
-
-    fn type_name(&self) -> String {
-        type_name::<Self>().to_string()
-    }
-}
-
-pub enum GpuTextureRef {
-    Swappable(Arc<ArcSwap<Uuid>>),
-    Shared(Uuid),
-}
-
-impl GpuTextureRef {
-    fn new_shared(uuid: Uuid) -> Self {
-        let v = GpuTextureRef::Shared(uuid);
-        v.register();
-        v
-    }
-
-    fn new_swappable(uuid: Arc<ArcSwap<Uuid>>) -> Self {
-        let v = GpuTextureRef::Swappable(uuid);
-        v.register();
-        v
-    }
-
-    pub(crate) fn swap(&self, new_uuid: Arc<Uuid>) {
-        match self {
-            GpuTextureRef::Shared(_) => panic!("Attempt to swap shared GpuTextureRef"),
-            GpuTextureRef::Swappable(x) => {
-                trace!("Swapping GpuTextureRef");
-
-                let count = Arc::strong_count(&x);
-                // we need to register and deregister multiple times because there are multiple references to a swappable GpuTextureRef
-
-                for _ in 0..count {
-                    self.deregister();
-                }
-
-                x.swap(new_uuid);
-
-                for _ in 0..count {
-                    self.register();
-                }
-            }
-        }
-    }
-
-    pub fn load(&self) -> Arc<GpuTexture> {
-        AssetLoader::texture_from_cache(&self.uuid()).expect("Texture in cache")
-    }
-
-    fn register(&self) {
-        Self::register_inner(&self.uuid());
-    }
-
-    fn deregister(&self) {
-        Self::deregister_inner(&self.uuid())
-    }
-
-    pub(crate) fn register_inner(uuid: &Uuid) {
-        trace!("Registring {}", uuid);
-        let arc = AssetLoader::texture_from_cache(uuid).unwrap();
-        unsafe { Arc::increment_strong_count(Arc::as_ptr(&arc)) }
-    }
-
-    pub(crate) fn deregister_inner(uuid: &Uuid) {
-        trace!("Deregistring {}", uuid);
-        let arc = AssetLoader::texture_from_cache(uuid)
-            .expect(format!("Texture {} to be loaded", uuid).as_str());
-        unsafe { Arc::decrement_strong_count(Arc::as_ptr(&arc)) }
-    }
-}
-
-impl Drop for GpuTextureRef {
-    fn drop(&mut self) {
-        trace!(
-            "Drop GpuTextureRef {}, count {}",
-            self.uuid(),
-            Arc::strong_count(&self.load())
-        );
-        if Arc::strong_count(&self.load()) > 0 {
-            self.deregister()
-        }
-    }
-}
-
-impl Clone for GpuTextureRef {
-    fn clone(&self) -> Self {
-        trace!("Cloning GpuTextureRef");
-        let v = match self {
-            GpuTextureRef::Swappable(x) => GpuTextureRef::Swappable(Arc::clone(x)),
-            GpuTextureRef::Shared(x) => GpuTextureRef::Shared(x.clone()),
-        };
-
-        v.register();
-        v
-    }
-}
-
-impl GpuTextureRef {
-    pub fn uuid(&self) -> Uuid {
-        match self {
-            GpuTextureRef::Swappable(x) => **x.load(),
-            GpuTextureRef::Shared(x) => x.clone(),
-        }
-    }
-}
 
 lazy_static! {
     static ref ASSET_LOADER: AssetLoader = AssetLoader::init();
 }
 
 pub struct AssetLoader {
-    pub(crate) name_cache: Option<DashMap<uuid::Uuid, String>>,
+    pub(crate) name_cache: Option<DashMap<::uuid::Uuid, String>>,
     pub(crate) active_cache_debug_ui: AtomicU8,
     pub(crate) header_config: Arc<HeaderConfig>,
     pub(crate) archives: DashMap<Uuid, Mutex<Archive<File>>>,
@@ -432,7 +277,7 @@ impl AssetLoader {
             Self::with_loader(|loader| match &loader.name_cache {
                 Some(x) => {
                     x.insert(
-                        uuid::Uuid::new_v5(&UUID_NAMESPACE_ASSETS, id.as_bytes()),
+                        ::uuid::Uuid::new_v5(&UUID_NAMESPACE_ASSETS, id.as_bytes()),
                         id.to_string(),
                     );
                 }
@@ -470,41 +315,6 @@ impl AssetLoader {
     }
 }
 
-struct TextureLoadJob {
-    id: String,
-    tex: GpuTextureRef,
-    format: Option<ImageFormat>,
-}
-
-impl ToUuid for TextureLoadJob {}
-
-impl Job for TextureLoadJob {
-    fn get_freq(&self) -> JobFrequency {
-        JobFrequency::Once
-    }
-
-    fn run(&mut self, device: &Device, queue: &Queue) -> Result<()> {
-        let data = AssetLoader::get_asset_uncached(&self.id)?;
-        let uuid = Uuid::new_v5(&UUID_NAMESPACE_ASSETS, self.id.as_bytes());
-        let texture = match self.format {
-            Some(format) => GpuTexture::new_from_data_with_format(
-                device,
-                queue,
-                &data,
-                format,
-                Some(&self.id),
-                uuid,
-            ),
-            None => GpuTexture::new_from_data(device, queue, &data, Some(&self.id), uuid),
-        }?;
-
-        let cached_texture = Arc::new(texture);
-        AssetLoader::insert_into_texture_cache(&self.id, cached_texture);
-        self.tex.swap(Arc::new(uuid));
-        Ok(())
-    }
-}
-
 fn clean_cache_inner<T>(cache: &DashMap<Uuid, Arc<T>>, max_strong_ref: usize) -> usize {
     puffin::profile_function!();
     let mut to_remove = Vec::new();
@@ -529,20 +339,4 @@ fn clean_cache_inner<T>(cache: &DashMap<Uuid, Arc<T>>, max_strong_ref: usize) ->
     }
 
     to_remove.len()
-}
-
-pub struct CacheCleanJob;
-
-impl ToUuid for CacheCleanJob {}
-
-impl Job for CacheCleanJob {
-    fn get_freq(&self) -> JobFrequency {
-        JobFrequency::Periodically
-    }
-
-    fn run(&mut self, _: &Device, _: &Queue) -> Result<()> {
-        AssetLoader::clean_cache();
-
-        Ok(())
-    }
 }

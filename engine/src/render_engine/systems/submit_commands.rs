@@ -1,6 +1,6 @@
-use crate::render_engine::resources::FrameResources;
+use crate::render_engine::resources::{CommandBufferCollector, FrameResources};
 use crate::render_engine::RenderEngineResources;
-use bevy_ecs::system::{Res, ResMut};
+use bevy_ecs::system::{Commands, Res, ResMut};
 use log::error;
 use parking_lot::Mutex;
 use std::mem::swap;
@@ -8,19 +8,15 @@ use std::ops::DerefMut;
 use wgpu::CommandBuffer;
 
 pub fn ecs_render_submit_commands(
-    commands: Res<Mutex<Vec<CommandBuffer>>>,
+    mut commands: Commands,
+    command_buffers: Res<CommandBufferCollector>,
     engine: Res<RenderEngineResources>,
-    mut frame: ResMut<Option<FrameResources>>,
+    mut frame: ResMut<FrameResources>,
 ) {
     puffin::profile_function!();
-    let mut lock = commands.lock();
-    engine.queue.submit(lock.drain(..));
-    if lock.len() > 0 {
-        error!("Did not drain all commands!");
-    }
+    let collected_commands = command_buffers.take();
+    engine.queue.submit(collected_commands);
 
-    let mut old = None;
-    swap(frame.deref_mut(), &mut old);
-    let old = old.unwrap();
-    old.output.present();
+    frame.present();
+    commands.remove_resource::<FrameResources>();
 }
