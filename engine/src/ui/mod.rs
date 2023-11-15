@@ -41,7 +41,7 @@ impl epi::App for DebugUi {
     }
 
     fn update(&mut self, ctx: &CtxRef, _frame: &Frame) {
-        puffin::profile_function!();
+        puffin::profile_function!("DebugUi::update");
         egui::TopBottomPanel::top("top_menu").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.monospace(format!(

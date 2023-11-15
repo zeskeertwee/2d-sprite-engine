@@ -12,7 +12,6 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 // todo: use all files in lvme-impl folder
-const LVME_IMPLEMENTATION: &'static str = include_str!("../../lvme-impl/deltatime.lua");
 
 #[derive(Component)]
 pub struct LuaScript {
@@ -45,8 +44,6 @@ impl LuaScript {
     }
 
     pub fn run_setup(&self, vm: &Lua) {
-        vm.load(LVME_IMPLEMENTATION).exec().unwrap();
-
         vm.load(self.binary.deref()).exec().unwrap();
         vm.load(r#"setup()"#).exec().unwrap();
     }

@@ -15,6 +15,7 @@ impl EguiWindow for SchedulerWorkerThreadWindow {
     }
 
     fn draw(&mut self, ui: &mut Ui) {
+        puffin::profile_function!("SchedulerWorkerThreadWindow");
         let states = JobScheduler::thread_states();
 
         ScrollArea::new([false, true]).show(ui, |ui| {

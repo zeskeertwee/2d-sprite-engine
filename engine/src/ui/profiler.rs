@@ -20,6 +20,7 @@ impl EguiWindow for PuffinProfilerWindow {
     }
 
     fn draw(&mut self, ui: &mut Ui) {
+        puffin::profile_function!("PuffinProfilerWindow");
         puffin_egui::profiler_ui(ui)
     }
 }

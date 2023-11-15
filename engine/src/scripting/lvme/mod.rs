@@ -1,5 +1,6 @@
 mod log;
 mod print_hook;
+mod time;
 
 use ::log::{trace, warn};
 use anyhow::{bail, Result};
@@ -11,7 +12,8 @@ use std::fmt::Debug;
 lazy_static! {
     static ref EXTENSIONS: Vec<Box<dyn LuaVMExtension>> = vec![
         Box::new(log::LogExtension),
-        Box::new(print_hook::PrintHookExtension)
+        Box::new(print_hook::PrintHookExtension),
+        Box::new(time::TimeExtension)
     ];
 }
 

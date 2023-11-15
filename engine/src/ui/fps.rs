@@ -23,6 +23,7 @@ impl EguiWindow for DebugFrametimeWindow {
     }
 
     fn draw(&mut self, ui: &mut Ui) {
+        puffin::profile_function!("DebugFrametimeWindow");
         ui.label(format!(
             "Frametime: {:.2}ms {}",
             self.avg_frametime * 1000.0,

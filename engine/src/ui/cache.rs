@@ -13,6 +13,7 @@ pub struct CacheDebugUi {
 
 impl CacheDebugUi {
     pub fn update(&mut self, device: &Device, render_pass: &mut egui_wgpu_backend::RenderPass) {
+        puffin::profile_function!();
         let mut loaded_uuids = Vec::new();
         let mut to_remove = Vec::new();
 
@@ -73,6 +74,7 @@ impl EguiWindow for CacheDebugUi {
     }
 
     fn draw(&mut self, ui: &mut Ui) {
+        puffin::profile_function!("CacheDebugUi");
         ui.vertical(|ui| {
             for (uuid, tex) in self.egui_textures.iter() {
                 ui.horizontal(|ui| {
