@@ -1,5 +1,3 @@
-#![feature(type_alias_impl_trait)]
-
 mod asset_management;
 mod demo_sys;
 mod ecs;
@@ -64,6 +62,7 @@ fn engine_main() {
     AssetLoader::add_archive("./res/redist/shaders.pak").unwrap();
     AssetLoader::add_archive("./res/redist/assets.pak").unwrap();
     AssetLoader::add_archive("./res/redist/scripts.pak").unwrap();
+    AssetLoader::add_archive("./res/redist/lvme.pak").unwrap();
 
     let event_loop = EventLoop::with_user_event();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
@@ -72,6 +71,9 @@ fn engine_main() {
     render_engine::ecs::init_renderer_resources_in_world(&mut world, window, &event_loop);
     render_engine::ecs::insert_renderer_systems_in_schedule(&mut world);
     demo_sys::initialize_in_world(&mut world);
+
+    // this needs to run AFTER the job system is initialized in init_renderer_resources_in_world
+    scripting::systems::initialize_systems_in_world(&mut world);
 
     let tex = AssetLoader::load_texture("tux-32.png").unwrap();
 

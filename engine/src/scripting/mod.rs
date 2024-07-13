@@ -6,7 +6,7 @@ use crate::asset_management::AssetLoader;
 use crate::scheduler::JobScheduler;
 use bevy_ecs::prelude::Component;
 pub use compile_job::LuaPreCompileJob;
-use log::warn;
+use log::{trace, warn};
 use mlua::Lua;
 use std::ops::Deref;
 use std::sync::Arc;
@@ -22,19 +22,7 @@ pub struct LuaScript {
 
 impl LuaScript {
     pub fn new(script_id: &str) -> Self {
-        let binary = match AssetLoader::get_precompiled_lua_script(script_id) {
-            Some(v) => v,
-            None => {
-                warn!("Lua script {} not precompiled!", script_id);
-                let job = JobScheduler::submit(Box::new(LuaPreCompileJob::new(script_id)));
-                match job.flush() {
-                    Ok(_) => (),
-                    Err(e) => panic!("Failed to compile script: {:?}", e),
-                }
-
-                AssetLoader::get_precompiled_lua_script(script_id).unwrap()
-            }
-        };
+        let binary = get_lua_script_or_compile(script_id);
 
         LuaScript {
             setup: false,
@@ -60,9 +48,34 @@ impl LuaScript {
 
 pub fn create_lua_vm() -> Lua {
     let vm = Lua::new();
+    trace!("Creating new lua VM");
+
+    // sets up the rust side of the LVME
     lvme::insert_all_extensions(&vm).unwrap();
+
+    for i in AssetLoader::list_archive_entries("lvme.pak").unwrap() {
+        let binary = get_lua_script_or_compile(&i);
+        vm.load(binary.deref()).exec().unwrap();
+    }
+
     vm.set_compiler(compile_job::get_compiler());
     vm.sandbox(true).unwrap();
 
     vm
+}
+
+pub fn get_lua_script_or_compile(script_id: &str) -> Arc<Vec<u8>> {
+    match AssetLoader::get_precompiled_lua_script(script_id) {
+        Some(v) => v,
+        None => {
+            warn!("Lua script {} not precompiled!", script_id);
+            let job = JobScheduler::submit(Box::new(LuaPreCompileJob::new(script_id)));
+            match job.flush() {
+                Ok(_) => (),
+                Err(e) => panic!("Failed to compile script: {:?}", e),
+            }
+
+            AssetLoader::get_precompiled_lua_script(script_id).unwrap()
+        }
+    }
 }

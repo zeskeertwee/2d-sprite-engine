@@ -49,8 +49,6 @@ impl EcsWorld {
             render_schedule,
         };
 
-        crate::scripting::systems::initialize_systems_in_world(&mut world);
-
         world
     }
 

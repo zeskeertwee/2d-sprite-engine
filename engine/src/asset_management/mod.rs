@@ -131,6 +131,22 @@ impl AssetLoader {
 
         Ok(())
     }
+    
+    pub fn list_archive_entries(id: &str) -> Option<Vec<String>> {
+        let uuid = Uuid::new_v5(&UUID_NAMESPACE_ASSETS, id.as_bytes());
+        Self::with_loader(|loader| {
+            match loader.archives.get(&uuid) {
+                Some(x) => {
+                    let mut entries = Vec::new();
+                    for (name, _) in x.lock().entries() {
+                        entries.push(name.to_string());
+                    }
+                    Some(entries)
+                },
+                None => None,
+            }
+        })
+    }
 
     pub(crate) fn with_loader<R, F: FnOnce(&AssetLoader) -> R>(fun: F) -> R {
         //let start = Instant::now();
@@ -329,7 +345,8 @@ fn clean_cache_inner<T>(cache: &DashMap<Uuid, Arc<T>>, max_strong_ref: usize) ->
     }
 
     for uuid in to_remove.iter() {
-        let arc = cache.get(&uuid).unwrap().value();
+        let r = cache.get(&uuid).unwrap();
+        let arc = r.value();
         for _ in 0..Arc::strong_count(&arc) - 1 {
             unsafe { Arc::decrement_strong_count(Arc::as_ptr(&arc)) };
         }
